@@ -1,0 +1,16 @@
+[package]
+name = "pkg"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bus = "2.2.3"
+bitfield = "0.13.2"
+uuid = { version = "0.8", features = ["serde", "v4"] }
+crossbeam-channel = "0.5"
+crossbeam-utils = "0.8"
+spin_sleep = "1.0.0"
+magnetic = "2.2.0"
+chrono = "0.4"
