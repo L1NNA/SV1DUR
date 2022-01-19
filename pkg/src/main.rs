@@ -232,7 +232,7 @@ impl Device {
         );
         if CONFIG_PRINT_LOGS {
             println!(
-                "{} {}{:02}-{:02} {:^15} {} {} d_t:{}",
+                "{} {}{:02}-{:02} {:^15} {} {:^16} avg_d_t:{}",
                 l.0,
                 l.1,
                 l.2,
@@ -617,7 +617,7 @@ impl System {
                     for l in device.logs {
                         writeln!(
                             file,
-                            "{} {}{:02}-{:02} {:^15} {} {} d_t:{}",
+                            "{} {}{:02}-{:02} {:^15} {} {:^16} avg_d_t:{}",
                             l.0,
                             l.1,
                             l.2,
@@ -647,15 +647,24 @@ struct DefaultScheduler {
     total_device: u8,
     target: u8,
     data: Vec<u16>,
+    proto: u32,
 }
 
 impl Scheduler for DefaultScheduler {
     fn on_bc_ready(&mut self, d: &mut Device) {
         self.target = self.target % (self.total_device - 1) + 1;
         let another_target = self.target % (self.total_device - 1) + 1;
-        // d.act_bc2rt(self.target, &self.data);
+        //
         // d.act_rt2bc(self.target, self.data.len() as u8);
-        d.act_rt2rt(self.target, another_target, self.data.len() as u8)
+        // a simple rotating scheduler
+        match self.proto {
+            0 => d.act_rt2rt(self.target, another_target, self.data.len() as u8),
+            1 => d.act_bc2rt(self.target, &self.data),
+            2 => d.act_rt2bc(self.target, self.data.len() as u8),
+            _ => {}
+        }
+        self.proto += 1;
+        self.proto %= 3;
     }
 }
 
@@ -672,6 +681,7 @@ fn test1() {
                 total_device: n_devices,
                 target: 0,
                 data: vec![1, 2, 3],
+                proto: 0,
             },
             // control device-level response
             handler: DefaultEventHandler {},
