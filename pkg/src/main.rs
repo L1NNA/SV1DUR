@@ -39,8 +39,8 @@ impl ErrMsg {
             ErrMsg::MsgEntCmdRcv => "CMD RCV Received",
             ErrMsg::MsgEntCmdTrx => "CMD TRX Received",
             ErrMsg::MsgEntCmdMcx => "CMD MCX Received",
-            ErrMsg::MsgEntDat => "DAT Received",
-            ErrMsg::MsgEntSte => "SAT Received",
+            ErrMsg::MsgEntDat => "Data Received",
+            ErrMsg::MsgEntSte => "Status Received",
         }
     }
 }
@@ -64,7 +64,9 @@ bitfield! {
     pub parity_bit, set_parity_bit: 19, 19;
     // for command:
     pub tr, set_tr: 8, 8;
-    pub sub_address, set_sub_address: 13, 9;
+    // it was 13, 9 but since we use instrumentation bit
+    // we have kept reduce the sub-address space to 15.
+    pub sub_address, set_sub_address: 13, 10;
     pub mode, set_mode: 13, 11;
     // pub mode, set_mode: 13, 9;
     pub dword_count, set_dword_count: 18, 14;
@@ -126,12 +128,19 @@ pub enum State {
     Idle,
     Off,
     Pause,
-    AwaitStatusTrx,
-    AwaitStatusRcv,
-    AwaitData,
+    // waiting for data
+    AwtData,
+    // transmitting (including artificial delays)
     BusyTrx,
+    // bc2rt - bc waiting for reciever status code
+    AwtStsRcvB2R,
+    // rt2bc - bc waiting for the transmitter status code
+    AwtStsTrxR2B,
+    // rt2rt - bc waiting for reciever status code
+    AwtStsRcvR2R,
+    // rt2rt - bc waiting for the transmitter status code
+    AwtStsTrxR2R,
 }
-
 impl fmt::Display for State {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
@@ -197,8 +206,9 @@ impl Device {
     }
 
     fn reset_all_stateful(&mut self) {
-        self.state = State::Idle;
+        self.set_state(State::Idle);
         self.number_of_current_cmd = 0;
+        self.delta_t_start = 0;
         self.memory.clear();
         self.dword_count = 0;
         self.dword_count_expected = 0;
@@ -247,11 +257,26 @@ impl Device {
         for d in data {
             self.write(Word::new_data(*d));
         }
-        self.set_state(State::AwaitStatusRcv);
+        self.set_state(State::AwtStsRcvB2R);
         self.delta_t_start = self.clock.elapsed().as_nanos();
     }
-    fn act_rt2bc(&mut self, src: u8) {}
-    fn act_rt2rt(&mut self, src: u8, dst: u8) {}
+    fn act_rt2bc(&mut self, src: u8, dword_count: u8) {
+        self.set_state(State::BusyTrx);
+        self.write(Word::new_cmd(src, dword_count, 1));
+        // expecting to recieve dword_count number of words
+        self.dword_count_expected = dword_count;
+        self.set_state(State::AwtStsTrxR2B);
+        self.delta_t_start = self.clock.elapsed().as_nanos();
+    }
+    fn act_rt2rt(&mut self, src: u8, dst: u8, dword_count: u8) {
+        self.set_state(State::BusyTrx);
+        let mut cmd = Word::new_cmd(src, dword_count, 1);
+        cmd.set_sub_address(dst);
+        self.write(cmd);
+        // expecting to recieve dword_count number of words
+        self.set_state(State::AwtStsTrxR2R);
+        self.delta_t_start = self.clock.elapsed().as_nanos();
+    }
 }
 
 impl fmt::Display for Device {
@@ -279,13 +304,17 @@ impl EventHandler for DefaultEventHandler {
             // 31 is the boardcast address
             if destination == d.address || destination == 31 {
                 // d.log(*w, ErrMsg::MsgEntCmd);
+                // println!("{} {} {}", w, w.tr(), w.mode());
                 d.number_of_current_cmd += 1;
                 // if there was previously a command word recieved
                 // cancel previous command (clear state)
-                if d.number_of_current_cmd >= 1 {
+                if d.number_of_current_cmd >= 2 {
                     d.reset_all_stateful();
                 }
-                if w.mode() == 2 {
+                if w.tr() == 0 && (w.mode() == 1 || w.mode() == 0) {
+                    // shutdown etc mode change command
+                    self.on_cmd_mcx(d, w);
+                } else {
                     if w.tr() == 0 {
                         // receive command
                         self.on_cmd_rcv(d, w);
@@ -294,10 +323,11 @@ impl EventHandler for DefaultEventHandler {
                         // faked device only mimic events but not responding
                         self.on_cmd_trx(d, w);
                     }
-                } else if w.mode() == 1 || w.mode() == 0 {
-                    // shutdown etc mode change command
-                    self.on_cmd_mcx(d, w);
                 }
+            }
+            // rt2rt sub destination
+            if w.tr() == 1 && w.sub_address() == d.address {
+                self.on_cmd_rcv(d, w);
             }
         }
     }
@@ -307,8 +337,8 @@ impl EventHandler for DefaultEventHandler {
         if !d.fake {
             d.set_state(State::BusyTrx);
             d.write(Word::new_status(d.address));
-            for i in 1..10 {
-                d.write(Word::new_data(i as u16));
+            for i in 0..w.dword_count() {
+                d.write(Word::new_data((i + 1) as u16));
             }
         }
         d.reset_all_stateful();
@@ -316,7 +346,7 @@ impl EventHandler for DefaultEventHandler {
     fn on_cmd_rcv(&mut self, d: &mut Device, w: &mut Word) {
         d.log(*w, ErrMsg::MsgEntCmdRcv);
         // may be triggered after cmd
-        d.set_state(State::AwaitData);
+        d.set_state(State::AwtData);
         d.dword_count = 0;
         d.dword_count_expected = w.dword_count();
         if w.address() == 31 {
@@ -342,7 +372,7 @@ impl EventHandler for DefaultEventHandler {
                         // is related to the current command
                         // (in this case, the clock to be synced)
                         d.ccmd = 1;
-                        d.set_state(State::AwaitData);
+                        d.set_state(State::AwtData);
                     }
                     30 => {
                         // clear cache
@@ -359,7 +389,7 @@ impl EventHandler for DefaultEventHandler {
         }
     }
     fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
-        if d.state == State::AwaitData {
+        if d.state == State::AwtData {
             d.log(*w, ErrMsg::MsgEntDat);
             if !d.fake {
                 if d.ccmd == 1 {
@@ -374,7 +404,10 @@ impl EventHandler for DefaultEventHandler {
                     d.dword_count += 1;
                     if d.dword_count == d.dword_count_expected {
                         d.set_state(State::BusyTrx);
-                        d.write(Word::new_status(d.address));
+                        if d.mode != Mode::BC {
+                            // only RT will responding status message
+                            d.write(Word::new_status(d.address));
+                        }
                         d.reset_all_stateful();
                     }
                 }
@@ -384,23 +417,34 @@ impl EventHandler for DefaultEventHandler {
     fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
         if d.mode == Mode::BC {
             d.log(*w, ErrMsg::MsgEntSte);
+            // check delta_t
+            if d.delta_t_start != 0 {
+                let delta_t = d.clock.elapsed().as_nanos() - d.delta_t_start;
+                d.delta_t_avg += delta_t;
+                d.delta_t_count += 1;
+            }
             match d.state {
-                State::AwaitStatusTrx => {
-                    // rt2rt (transmitter confirmation)
+                State::AwtStsTrxR2B => {
+                    //(transmitter confirmation)
                     // rt2bc
-                    // check delta_t
 
-                    // always monitor data
-                    d.set_state(State::AwaitData)
+                    d.set_state(State::AwtData)
                 }
-                State::AwaitStatusRcv => {
+                State::AwtStsRcvB2R => {
                     // rt2rt (reciver confirmation)
                     // bc2rt
-                    // check delta_t
                     d.reset_all_stateful();
-                    let delta_t = d.clock.elapsed().as_nanos() - d.delta_t_start;
-                    d.delta_t_avg += delta_t;
-                    d.delta_t_count += 1;
+                }
+                State::AwtStsTrxR2R => {
+                    //(transmitter confirmation)
+                    // rt2rt
+                    d.set_state(State::AwtStsRcvR2R);
+                    d.delta_t_start = d.clock.elapsed().as_nanos();
+                }
+                State::AwtStsRcvR2R => {
+                    // rt2rt (reciver confirmation)
+                    // rt2rt
+                    d.reset_all_stateful();
                 }
                 _ => {}
             }
@@ -573,7 +617,7 @@ impl System {
                     for l in device.logs {
                         writeln!(
                             file,
-                            "{} {}{:02}-{:02} {:^15} {} {} d_t{}",
+                            "{} {}{:02}-{:02} {:^15} {} {} d_t:{}",
                             l.0,
                             l.1,
                             l.2,
@@ -608,7 +652,10 @@ struct DefaultScheduler {
 impl Scheduler for DefaultScheduler {
     fn on_bc_ready(&mut self, d: &mut Device) {
         self.target = self.target % (self.total_device - 1) + 1;
-        d.act_bc2rt(self.target, &self.data);
+        let another_target = self.target % (self.total_device - 1) + 1;
+        // d.act_bc2rt(self.target, &self.data);
+        // d.act_rt2bc(self.target, self.data.len() as u8);
+        d.act_rt2rt(self.target, another_target, self.data.len() as u8)
     }
 }
 
