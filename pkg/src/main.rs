@@ -270,9 +270,8 @@ impl Device {
     }
     fn act_rt2rt(&mut self, src: u8, dst: u8, dword_count: u8) {
         self.set_state(State::BusyTrx);
-        let mut cmd = Word::new_cmd(src, dword_count, 1);
-        cmd.set_sub_address(dst);
-        self.write(cmd);
+        self.write(Word::new_cmd(dst, dword_count, 0));
+        self.write(Word::new_cmd(src, dword_count, 1));
         // expecting to recieve dword_count number of words
         self.set_state(State::AwtStsTrxR2R);
         self.delta_t_start = self.clock.elapsed().as_nanos();
