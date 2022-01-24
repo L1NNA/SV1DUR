@@ -183,6 +183,8 @@ struct Device {
     pub clock: Instant,
     pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
     pub transmitters: Vec<Sender<Word>>,
+    pub write_queue: Vec<(u128, Word)>,
+    pub write_delays: u128,
     pub receiver: Receiver<Word>,
     pub delta_t_avg: u128,
     pub delta_t_start: u128,
@@ -190,14 +192,26 @@ struct Device {
 }
 
 impl Device {
-    fn write(&self, val: Word) {
+    fn write(&mut self, val: Word) {
         // println!("writing {} {}", val, val.sync());
-        for (i, s) in self.transmitters.iter().enumerate() {
-            if (i as u32) != self.id {
-                s.try_send(val);
-                // s.send(val);
-            }
-        }
+        // for (i, s) in self.transmitters.iter().enumerate() {
+        //     if (i as u32) != self.id {
+        //         s.try_send(val);
+        //         // s.send(val);
+        //     }
+        // }
+        self.write_queue
+            .push((self.clock.elapsed().as_nanos() + self.write_delays, val));
+        // let transmitters = self.transmitters.clone();
+        // let id = self.id.clone();
+        // thread::spawn(move || {
+        //     for (i, s) in transmitters.iter().enumerate() {
+        //         if (i as u32) != id {
+        //             s.try_send(val);
+        //             // s.send(val);
+        //         }
+        //     }
+        // });
     }
 
     fn read(&self) -> Result<Word, TryRecvError> {
@@ -460,10 +474,11 @@ struct System {
     exit: Arc<AtomicBool>,
     handlers: Vec<thread::JoinHandle<u32>>,
     home_dir: String,
+    write_delays: u128,
 }
 
 impl System {
-    fn new(max_devices: u32) -> Self {
+    fn new(max_devices: u32, write_delays: u128) -> Self {
         let clock = Instant::now();
         let home_dir = Utc::now().format("%F-%H-%M-%S").to_string();
 
@@ -480,6 +495,7 @@ impl System {
             exit: Arc::new(AtomicBool::new(false)),
             handlers: Vec::new(),
             home_dir: home_dir,
+            write_delays: write_delays,
         };
         for _ in 0..sys.max_devices {
             let (s1, r1) = bounded(512);
@@ -535,11 +551,16 @@ impl System {
         addr: u8,
         mode: Mode,
         router: Router<K, V>,
+        fake: bool,
     ) {
         let transmitters = self.transmitters.clone();
         let receiver = self.receivers[self.n_devices as usize].clone();
+        let mut w_delay = self.write_delays;
+        if fake {
+            w_delay = 0;
+        }
         let mut device = Device {
-            fake: false,
+            fake: fake,
             ccmd: 0,
             state: State::Idle,
             mode: mode,
@@ -553,10 +574,12 @@ impl System {
             dword_count_expected: 0,
             clock: self.clock,
             transmitters: transmitters,
+            write_queue: Vec::new(),
             receiver: receiver,
             delta_t_avg: 0,
             delta_t_count: 0,
             delta_t_start: 0,
+            write_delays: w_delay,
         };
         let go = Arc::clone(&self.go);
         let exit = Arc::clone(&self.exit);
@@ -579,6 +602,27 @@ impl System {
                     // if device.mode == Mode::BC{
                     //     println!("here")
                     // }
+
+                    // write is `asynchrnoized`
+                    let wq = device.write_queue.len();
+                    if wq > 0 {
+                        let current = device.clock.elapsed().as_nanos();
+
+                        for entry in device.write_queue.iter() {
+                            // if now it is the time to actually write
+                            if entry.0 <= current {
+                                for (i, s) in device.transmitters.iter().enumerate() {
+                                    if (i as u32) != device.id {
+                                        let e = s.try_send(entry.1);
+                                        // s.send(val);
+                                    }
+                                }
+                            }
+                        }
+                        device.write_queue.retain(|x| (*x).0 > current);
+                        // device.write_queue.clear();
+                    }
+
                     let res = device.read();
                     if !res.is_err() {
                         let mut w = res.unwrap();
@@ -670,7 +714,8 @@ impl Scheduler for DefaultScheduler {
 fn test1() {
     // let mut delays_single = Vec::new();
     let n_devices = 8;
-    let mut sys = System::new(n_devices as u32);
+    let w_delays = 0;
+    let mut sys = System::new(n_devices as u32, w_delays);
     for m in 0..n_devices {
         // let (s1, r1) = bounded(64);
         // s_vec.lock().unwrap().push(s1);
@@ -686,9 +731,9 @@ fn test1() {
             handler: DefaultEventHandler {},
         };
         if m == 0 {
-            sys.run_d(m as u8, Mode::BC, router);
+            sys.run_d(m as u8, Mode::BC, router, false);
         } else {
-            sys.run_d(m as u8, Mode::RT, router);
+            sys.run_d(m as u8, Mode::RT, router, false);
         }
     }
     sys.go();
