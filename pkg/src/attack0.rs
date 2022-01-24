@@ -12,6 +12,10 @@ pub struct CollisionAttackAgainstTheBus {
 
 impl CollisionAttackAgainstTheBus {
     pub fn inject(&mut self, d: &mut Device) {
+        if self.started == 0 {
+            self.started = d.clock.elapsed().as_nanos();
+            self.success = true;
+        }
         for i in 0..self.nwords_inj {
             let w = Word::new_data(i as u16);
             d.log(
@@ -20,8 +24,6 @@ impl CollisionAttackAgainstTheBus {
             );
             d.write(w);
         }
-        self.started = d.clock.elapsed().as_nanos();
-        self.success = true;
     }
 }
 
@@ -33,6 +35,22 @@ impl EventHandler for CollisionAttackAgainstTheBus {
         );
         self.inject(d);
         self.default_on_cmd(d, w);
+    }
+    fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
+        d.log(
+            *w,
+            ErrMsg::MsgAttk("Jamming launched (after data)".to_string()),
+        );
+        self.inject(d);
+        self.default_on_dat(d, w);
+    }
+    fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
+        d.log(
+            *w,
+            ErrMsg::MsgAttk("Jamming launched (after status)".to_string()),
+        );
+        self.inject(d);
+        self.default_on_dat(d, w);
     }
 }
 
