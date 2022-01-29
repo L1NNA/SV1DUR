@@ -14,8 +14,8 @@ pub struct CommandInvalidationAttack {
 impl CommandInvalidationAttack {
     pub fn inject(&mut self, d: &mut Device) {
         self.attack_times.push(d.clock.elapsed().as_nanos());
-        let dword_count = 31;    // default taken from Michael's code
-        let tr = 0;              // default taken from Michael's code
+        let dword_count = 31;    // Maximum number of words.  This will mean the receipient ignores the next 31 messages
+        let tr = 0;              // 1: transmit, 0: receive.  We want to receive because it will sit and wait rather than responding to the BC.
         let w = Word::new_cmd(self.target, dword_count, tr);
         d.log(
             WRD_EMPTY,
@@ -27,10 +27,11 @@ impl CommandInvalidationAttack {
 }
 
 impl EventHandler for CommandInvalidationAttack {
-    fn on_cmd_trx(&mut self, d: &mut Device, w: &mut Word) {
+    fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         // This function replaces "find_RT_tcmd" from Michael's code
+        // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
         let destination = w.address();
-        if destination == self.target && w.sub_address()==2 && self.target_found==false {
+        if destination == self.target && self.target_found==false && w.tr() == 1 {
             d.log(
                 *w, 
                 ErrMsg::MsgAttk(format!("Attacker>> Target detected(RT{})", self.target).to_string()),
@@ -38,7 +39,7 @@ impl EventHandler for CommandInvalidationAttack {
             self.target_found = true;
             self.inject(d);
         }
-        self.default_on_cmd_trx(d, w)
+        self.default_on_cmd(d, w)
     }
 }
 
@@ -81,7 +82,7 @@ pub fn test_attack9() {
         handler: CommandInvalidationAttack {
             attack_times: Vec::new(),
             success: false,
-            target: 5, // attacking RT address @5
+            target: 4, // attacking RT address @5
             target_found: false,
         },
     };
