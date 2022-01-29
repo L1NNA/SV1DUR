@@ -17,7 +17,7 @@ impl CollisionAttackAgainstTheBus {
             self.success = true;
         }
         for i in 0..self.nwords_inj {
-            let w = Word::new_data(i as u16);
+            let w = Word::new_data(i as u32);
             d.log(
                 WRD_EMPTY,
                 ErrMsg::MsgAttk(format!("Sent Fake Data {} ", w).to_string()),
