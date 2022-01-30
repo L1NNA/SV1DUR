@@ -77,8 +77,8 @@ bitfield! {
     pub mode_code, set_mode_code: 18, 14;
     // for data word
     u32;
-    pub all,_ : 0, 20;
-    u16;
+    pub all,_ : 20, 0;
+    u32;
     pub data, set_data: 19, 3;
 
     // additional (attack type):
@@ -96,12 +96,14 @@ impl Word {
         let mut w = Word { 0: 0 };
         w.set_sync(1);
         w.set_address(src_addr);
+        w.calculate_parity_bit();
         return w;
     }
 
     pub fn new_data(val: u16) -> Word {
         let mut w = Word { 0: 0 };
-        w.set_data(val);
+        w.set_data(val as u32);
+        w.calculate_parity_bit();
         return w;
     }
 
@@ -113,7 +115,25 @@ impl Word {
         w.set_dword_count(dword_count);
         w.set_mode(2);
         w.set_instrumentation_bit(1);
+        w.calculate_parity_bit();
         return w;
+    }    
+    
+    #[allow(unused)]
+    pub fn calculate_parity_bit(&mut self){
+        /*
+        This code will calculate and apply the parity bit.  This will not affect other bits in the bitfield.
+        */
+        // let mask = u32::MAX - 1; //MAX-1 leaves the paritybit empty (I think this assumption may be wrong.  I think this is actually the sync bits)
+        let mask = u32::MAX - 2u32.pow(19); // This will likely be the code we need.  It keeps all of the bits outside of the "19" bit.
+        let int = self.all() & mask;
+        let parity_odd = true;
+        if int.count_ones() % 2 == 0 {
+            self.set_parity_bit(!parity_odd as u8);
+        }
+        else {
+            self.set_parity_bit(parity_odd as u8);
+        }
     }
 }
 
