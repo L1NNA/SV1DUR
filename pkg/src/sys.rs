@@ -80,9 +80,8 @@ bitfield! {
     pub all,_ : 20, 0;
     u32;
     pub data, set_data: 19, 3;
-
     // additional (attack type):
-    pub attk, set_attk: 24,21
+    pub attk, set_attk: 24,21;
 }
 
 impl fmt::Display for Word {
