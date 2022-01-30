@@ -96,7 +96,7 @@ pub fn test_attack8() {
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false);
+    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 9);
     sys.go();
     sys.sleep_ms(10);
     sys.stop();

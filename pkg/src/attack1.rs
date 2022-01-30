@@ -91,9 +91,9 @@ pub fn test_attack1() {
         };
 
         if m == 0 {
-            sys.run_d(m as u8, Mode::BC, default_router, false);
+            sys.run_d(m as u8, Mode::BC, default_router, false, 0);
         } else {
-            sys.run_d(m as u8, Mode::RT, default_router, false);
+            sys.run_d(m as u8, Mode::RT, default_router, false, 0);
         }
     }
     let attacker_router = Router {
@@ -115,7 +115,7 @@ pub fn test_attack1() {
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false);
+    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 1);
     sys.go();
     sys.sleep_ms(10);
     sys.stop();

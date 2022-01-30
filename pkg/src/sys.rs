@@ -402,7 +402,7 @@ pub struct Device {
 }
 
 impl Device {
-    pub fn write(&mut self, val: Word) {
+    pub fn write(&mut self, mut val: Word) {
         // println!("writing {} {}", val, val.sync());
         // for (i, s) in self.transmitters.iter().enumerate() {
         //     if (i as u32) != self.id {
@@ -410,6 +410,9 @@ impl Device {
         //         // s.send(val);
         //     }
         // }
+        if self.fake{
+            val.set_attk(self.fake_type);
+        }
         self.write_queue
             .push((self.clock.elapsed().as_nanos() + self.write_delays, val));
         // let transmitters = self.transmitters.clone();
@@ -596,6 +599,7 @@ impl System {
         mode: Mode,
         router: Router<K, V>,
         fake: bool,
+        fake_type: u32,
     ) {
         let transmitters = self.transmitters.clone();
         let receiver = self.receivers[self.n_devices as usize].clone();
@@ -605,7 +609,7 @@ impl System {
         }
         let mut device = Device {
             fake: fake,
-            fake_type: 0,
+            fake_type: fake_type,
             ccmd: 0,
             state: State::Idle,
             mode: mode,
@@ -779,9 +783,9 @@ pub fn test_default() {
             handler: DefaultEventHandler {},
         };
         if m == 0 {
-            sys.run_d(m as u8, Mode::BC, router, false);
+            sys.run_d(m as u8, Mode::BC, router, false, 0);
         } else {
-            sys.run_d(m as u8, Mode::RT, router, false);
+            sys.run_d(m as u8, Mode::RT, router, false, 0);
         }
     }
     sys.go();
