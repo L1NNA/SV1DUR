@@ -375,6 +375,7 @@ pub struct Router<K: Scheduler, V: EventHandler> {
 #[derive(Clone, Debug)]
 pub struct Device {
     pub fake: bool,
+    pub fake_type:u32,
     pub ccmd: u8,
     pub mode: Mode,
     pub state: State,
@@ -600,6 +601,7 @@ impl System {
         }
         let mut device = Device {
             fake: fake,
+            fake_type: 0,
             ccmd: 0,
             state: State::Idle,
             mode: mode,
