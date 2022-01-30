@@ -80,11 +80,14 @@ bitfield! {
     pub all,_ : 0, 20;
     u16;
     pub data, set_data: 19, 3;
+
+    // additional (attack type):
+    pub attk, set_attk: 24,21
 }
 
 impl fmt::Display for Word {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "w:{:#021b}", self.0)
+        write!(f, "w:{:#025b}", self.0)
     }
 }
 
