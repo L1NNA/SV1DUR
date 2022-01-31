@@ -29,34 +29,29 @@ impl FakeStatusTrcmd {
 
 impl EventHandler for FakeStatusTrcmd {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        // This function replaces "find_RT_tcmd" and "find_RT_rcmd" from Michael's code
-        // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
         let destination = w.address();
-        self.word_count = w.dword_count();
-        if destination == self.target && self.target_found==false { // do we need the sub address?
-            if self.flag == 0 {
-                let new_flag;
-                if w.tr() == 1 {
-                    new_flag = 2;
-                    self.word_count = w.dword_count();
-                } else {
-                    new_flag = 1;
-                }
-                self.flag = new_flag;
+        // if w.address() != self.address {} //This line won't work yet.  TODO: Get our address.
+        if self.target != 2u8.pow(5) - 1 { 
+            if destination == self.target && w.tr() == 1 && !self.target_found {
+                d.log(
+                    WRD_EMPTY,
+                    ErrMsg::MsgAttk(format!("Attacker>> Target detected (RT{})", self.target).to_string()),
+                );
+                self.target_found = true;
+                d.log(
+                    WRD_EMPTY, 
+                    ErrMsg::MsgAttk(format!("Sending fake status word (after tr_cmd_word)").to_string()),
+                );
+                self.fake_status(d);
             }
-            if w.tr() == 0 {
-                self.word_count = w.dword_count();
+        } else {
+            if w.tr() == 1 && destination != 31 {
+                d.log(
+                    WRD_EMPTY,
+                    ErrMsg::MsgAttk(format!("Sending fake status word (after tr_cmd_word)")),
+                );
+                self.fake_status(d);
             }
-            self.target_found = true;
-            d.log(
-                *w, 
-                ErrMsg::MsgAttk(format!("Attacker>> Target detected(RT{})", self.target).to_string()),
-            );
-            d.log(
-                WRD_EMPTY, 
-                ErrMsg::MsgAttk(format!("Sending fake status word (after tr_cmd_word)").to_string()),
-            );
-            self.fake_status(d);
         }
         self.default_on_cmd(d, w);
     }
