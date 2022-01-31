@@ -77,7 +77,7 @@ bitfield! {
     pub mode_code, set_mode_code: 18, 14;
     // for data word
     u32;
-    pub all,_ : 0, 20;
+    pub all,_ : 20, 0;
     pub data, set_data: 18, 3;
     // additional (attack type):
     pub attk, set_attk: 24,21;
@@ -85,7 +85,7 @@ bitfield! {
 
 impl fmt::Display for Word {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "w:{:#025b}", self.0)
+        write!(f, "w:{:#026b}", self.0) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
     }
 }
 
@@ -109,7 +109,7 @@ impl Word {
         let mut w = Word { 0: 0 };
         w.set_sync(1);
         
-        w.set_tr(tr);
+        w.set_tr(tr); // 1: transmit, 0: receive
         
         w.set_address(addr); // the RT address which is five bits long
         // address 11111 (31) is reserved for broadcast protocol

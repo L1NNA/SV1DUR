@@ -57,7 +57,7 @@ impl EventHandler for DesynchronizationAttackOnRT {
                 ErrMsg::MsgAttk(format!("Attacker>> Target detected(RT{})", self.target).to_string()),
             );
         }
-        self.default_on_cmd(d, w)
+        self.default_on_cmd(d, w);
     }
 
     fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
@@ -105,9 +105,9 @@ pub fn test_attack7() {
         };
 
         if m == 0 {
-            sys.run_d(m as u8, Mode::BC, default_router, false);
+            sys.run_d(m as u8, Mode::BC, default_router, false, 0);
         } else {
-            sys.run_d(m as u8, Mode::RT, default_router, false);
+            sys.run_d(m as u8, Mode::RT, default_router, false, 0);
         }
     }
     let attacker_router = Router {

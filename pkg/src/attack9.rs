@@ -39,7 +39,7 @@ impl EventHandler for CommandInvalidationAttack {
             self.target_found = true;
             self.inject(d);
         }
-        self.default_on_cmd(d, w)
+        self.default_on_cmd(d, w);
     }
 }
 

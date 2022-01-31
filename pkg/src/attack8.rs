@@ -47,7 +47,7 @@ impl EventHandler for DataCorruptionAttack {
             self.target_found = true;
             self.inject(d);
         }
-        self.default_on_cmd(d, w)
+        self.default_on_cmd(d, w);
     }
 }
 
@@ -73,9 +73,9 @@ pub fn test_attack8() {
         };
 
         if m == 0 {
-            sys.run_d(m as u8, Mode::BC, default_router, false);
+            sys.run_d(m as u8, Mode::BC, default_router, false, 0);
         } else {
-            sys.run_d(m as u8, Mode::RT, default_router, false);
+            sys.run_d(m as u8, Mode::RT, default_router, false, 0);
         }
     }
     let attacker_router = Router {
