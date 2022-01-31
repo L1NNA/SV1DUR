@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 pub const WRD_EMPTY: Word = Word { 0: 0 };
 pub const CONFIG_PRINT_LOGS: bool = false;
 
+#[allow(unused)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ErrMsg {
     MsgEmpt,
@@ -140,6 +141,7 @@ impl Word {
     }
 }
 
+#[allow(unused)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Mode {
     RT,
@@ -153,6 +155,7 @@ impl fmt::Display for Mode {
     }
 }
 
+#[allow(unused)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum State {
     Idle,
@@ -560,6 +563,7 @@ impl System {
         self.go.store(true, Ordering::Relaxed);
     }
 
+    #[allow(unused)]
     pub fn pause(&mut self) {
         self.go.store(false, Ordering::Relaxed);
     }
@@ -766,6 +770,7 @@ pub struct DefaultEventHandler {}
 
 impl EventHandler for DefaultEventHandler {}
 
+#[allow(unused)]
 pub fn test_default() {
     // let mut delays_single = Vec::new();
     let n_devices = 8;
