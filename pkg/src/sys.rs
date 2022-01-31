@@ -203,10 +203,13 @@ pub trait EventHandler: Clone + Send {
         self.default_on_sts(d, w);
     }
 
+    #[allow(unused)]
     fn default_on_wrd_rec(&mut self, d: &mut Device, w: &mut Word) {
         // for bm to monitor every word
         // d.log(*w, ErrMsg::MsgEntWrdRec);
     }
+    
+    #[allow(unused)]
     fn default_on_err_parity(&mut self, d: &mut Device, w: &mut Word) {
         // log error tba
         // d.log(*w, ErrMsg::MsgEntErrPty);
