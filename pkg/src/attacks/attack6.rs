@@ -95,7 +95,7 @@ pub fn test_attack6() {
         handler: FakeStatusTrcmd {
             attack_times: Vec::new(),
             success: false,
-            target: 4, // attacking RT address @5
+            target: 4, // attacking RT address @4
             target_found: false,
         },
     };

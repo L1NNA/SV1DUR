@@ -83,7 +83,7 @@ pub fn test_attack9() {
         handler: CommandInvalidationAttack {
             attack_times: Vec::new(),
             success: false,
-            target: 4, // attacking RT address @5
+            target: 4, // attacking RT address @4
             target_found: false,
         },
     };

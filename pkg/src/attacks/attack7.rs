@@ -126,7 +126,7 @@ pub fn test_attack7() {
             word_count: 0u8,
             success: false,
             flag: 0,
-            target: 4, // attacking RT address @5
+            target: 4, // attacking RT address @4
             target_found: false,
         },
     };

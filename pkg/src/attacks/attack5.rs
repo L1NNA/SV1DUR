@@ -113,7 +113,7 @@ pub fn test_attack5() {
             attack_times: Vec::new(),
             word_count: 0u8,
             success: false,
-            target: 4, // attacking RT address @5
+            target: 4, // attacking RT address @4
             target_found: false,
             destination: 0u8,
         },
