@@ -9,14 +9,11 @@ pub struct MITMAttackOnRTs {
     pub success: bool,
     pub word_count: u8,
     pub injected_words: u8,
-    pub flag: u8,
-    pub target: u8,         // the target RT
     pub target_src: u8,
     pub target_dst: u8,
     pub target_dst_found: bool, // target found in traffic
     pub target_src_found: bool,
     pub done: bool,
-    pub destination: u8,
 }
 
 impl MITMAttackOnRTs {
@@ -127,14 +124,11 @@ pub fn test_attack3() {
             word_count: 0u8,
             injected_words: 0u8,
             success: false,
-            flag: 0,
-            target: 4, // attacking RT address @5
             target_src: 0u8,
             target_dst: 0u8,
             target_dst_found: false, // target found in traffic
             target_src_found: false,
             done: false,
-            destination: 0u8,
         },
     };
 

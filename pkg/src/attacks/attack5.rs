@@ -8,7 +8,6 @@ pub struct FakeStatusReccmd {
     pub attack_times: Vec<u128>,
     pub success: bool,
     pub word_count: u8,
-    pub flag: u8,
     pub target: u8,         // the target RT
     pub target_found: bool, // target found in traffic
     pub destination: u8,
@@ -113,7 +112,6 @@ pub fn test_attack5() {
             attack_times: Vec::new(),
             word_count: 0u8,
             success: false,
-            flag: 0,
             target: 4, // attacking RT address @5
             target_found: false,
             destination: 0u8,

@@ -8,11 +8,8 @@ pub struct DataThrashingAgainstRT {
     pub attack_times: Vec<u128>,
     pub success: bool,
     pub word_count: u8,
-    pub injected_words: u8,
-    pub flag: u8,
     pub target: u8,         // the target RT
     pub target_found: bool, // target found in traffic
-    pub destination: u8,
 }
 
 impl DataThrashingAgainstRT {
@@ -96,12 +93,9 @@ pub fn test_attack2() {
         handler: DataThrashingAgainstRT {
             attack_times: Vec::new(),
             word_count: 0u8,
-            injected_words: 0u8,
             success: false,
-            flag: 0,
             target: 2, // attacking RT address @4
             target_found: false,
-            destination: 0u8,
         },
     };
 
