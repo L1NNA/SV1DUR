@@ -1,63 +1,57 @@
 use crate::sys::{
     DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Router, System,
-    Word, WRD_EMPTY, State,
+    Word, WRD_EMPTY,
 };
 
 #[derive(Clone, Debug)]
-pub struct DataThrashingAgainstRT {
+pub struct DataCorruptionAttack {
     pub attack_times: Vec<u128>,
     pub success: bool,
     pub word_count: u8,
-    pub injected_words: u8,
-    pub flag: u8,
     pub target: u8,         // the target RT
     pub target_found: bool, // target found in traffic
-    pub destination: u8,
 }
 
-impl DataThrashingAgainstRT {
-    fn inject_words(&mut self, d: &mut Device) {
+impl DataCorruptionAttack {
+    pub fn inject(&mut self, d: &mut Device) {
+        d.log(
+            WRD_EMPTY, 
+            ErrMsg::MsgAttk(format!("Attacker>> Injecting a fake status word followed by fake data ...").to_string()),
+        );
         self.attack_times.push(d.clock.elapsed().as_nanos());
-        let word_count = 30;
-        let tr = 0;
-        let w = Word::new_cmd(self.target, word_count, tr);
+        let w = Word::new_status(self.target);
         d.write(w);
+        for _ in 0..self.word_count {
+            let w = Word::new_data(0x7171);
+            d.log(
+                WRD_EMPTY,
+                ErrMsg::MsgAttk(format!("Fake Data {} ", w).to_string()),
+            );
+            d.write(w);
+        }
         self.success = true;
     }
 }
 
-impl EventHandler for DataThrashingAgainstRT {
+impl EventHandler for DataCorruptionAttack {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        // This replaces 'jam_cmdwords' from Michael's code
-        if w.address() == self.target && w.tr() == 0 {
-            self.target_found = true;
-            self.word_count = w.dword_count();
+        // This function replaces "find_RT_tcmd" from Michael's code
+        // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
+        let destination = w.address();
+        self.word_count = w.dword_count();
+        if destination == self.target && self.target_found==false && w.tr() == 1 { // do we need the sub address?
             d.log(
-                WRD_EMPTY, 
-                ErrMsg::MsgAttk(format!("Thrashing triggered (after cmd_word)").to_string()),
+                *w, 
+                ErrMsg::MsgAttk(format!("Attacker>> Target detected(RT{})", self.target).to_string()),
             );
+            self.target_found = true;
+            self.inject(d);
         }
         self.default_on_cmd(d, w);
     }
-
-    fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
-        // This replaces 'jam_datawords' from Michael's code
-        if self.target_found {
-            self.word_count -= 1;
-            if self.word_count == 0 {
-                self.target_found = false;
-                d.log(
-                    WRD_EMPTY, 
-                    ErrMsg::MsgAttk(format!("Fake command injected!").to_string()),
-                );
-                self.inject_words(d);
-            }
-        }
-        self.default_on_dat(d, w);
-    }
 }
 
-pub fn test_attack2() {
+pub fn test_attack8() {
     // let mut delays_single = Vec::new();
     let n_devices = 8;
     // normal device has 4ns delays (while attacker has zero)
@@ -93,19 +87,16 @@ pub fn test_attack2() {
             proto: 0,
         },
         // control device-level response
-        handler: DataThrashingAgainstRT {
+        handler: DataCorruptionAttack {
             attack_times: Vec::new(),
             word_count: 0u8,
-            injected_words: 0u8,
             success: false,
-            flag: 0,
-            target: 2, // attacking RT address @4
+            target: 4, // attacking RT address @5
             target_found: false,
-            destination: 0u8,
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 0);
+    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 1);
     sys.go();
     sys.sleep_ms(10);
     sys.stop();

@@ -138,7 +138,7 @@ pub fn test_attack3() {
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 0);
+    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 1);
     sys.go();
     sys.sleep_ms(10);
     sys.stop();
