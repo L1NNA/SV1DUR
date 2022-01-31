@@ -85,7 +85,7 @@ bitfield! {
 
 impl fmt::Display for Word {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "w:{:#026b}", self.0) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
+        write!(f, "w:{:#027b}", self.0) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
     }
 }
 
@@ -208,7 +208,7 @@ pub trait EventHandler: Clone + Send {
         // for bm to monitor every word
         // d.log(*w, ErrMsg::MsgEntWrdRec);
     }
-    
+
     #[allow(unused)]
     fn default_on_err_parity(&mut self, d: &mut Device, w: &mut Word) {
         // log error tba
