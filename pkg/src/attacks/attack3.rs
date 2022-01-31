@@ -83,6 +83,7 @@ impl EventHandler for MITMAttackOnRTs {
     }
 }
 
+#[allow(dead_code)]
 pub fn test_attack3() {
     // let mut delays_single = Vec::new();
     let n_devices = 8;

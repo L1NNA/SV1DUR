@@ -43,6 +43,7 @@ impl EventHandler for CommandInvalidationAttack {
     }
 }
 
+#[allow(dead_code)]
 pub fn test_attack9() {
     // let mut delays_single = Vec::new();
     let n_devices = 8;

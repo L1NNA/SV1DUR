@@ -54,6 +54,7 @@ impl EventHandler for DataThrashingAgainstRT {
     }
 }
 
+#[allow(dead_code)]
 pub fn test_attack2() {
     // let mut delays_single = Vec::new();
     let n_devices = 8;

@@ -69,6 +69,7 @@ impl EventHandler for CollisionAttackAgainstAnRT {
     }
 }
 
+#[allow(dead_code)]
 pub fn test_attack1() {
     // let mut delays_single = Vec::new();
     let n_devices = 8;
