@@ -78,15 +78,14 @@ bitfield! {
     // for data word
     u32;
     pub all,_ : 20, 0;
-    u32;
-    pub data, set_data: 19, 3;
+    pub data, set_data: 18, 3;
     // additional (attack type):
     pub attk, set_attk: 24,21;
 }
 
 impl fmt::Display for Word {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "w:{:#025b}", self.0)
+        write!(f, "w:{:#026b}", self.0) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
     }
 }
 
@@ -99,7 +98,7 @@ impl Word {
         return w;
     }
 
-    pub fn new_data(val: u16) -> Word {
+    pub fn new_data(val: u32) -> Word {
         let mut w = Word { 0: 0 };
         w.set_data(val as u32);
         w.calculate_parity_bit();
@@ -109,9 +108,14 @@ impl Word {
     pub fn new_cmd(addr: u8, dword_count: u8, tr: u8) -> Word {
         let mut w = Word { 0: 0 };
         w.set_sync(1);
-        w.set_tr(tr);
-        w.set_address(addr);
-        w.set_dword_count(dword_count);
+        
+        w.set_tr(tr); // 1: transmit, 0: receive
+        
+        w.set_address(addr); // the RT address which is five bits long
+        // address 11111 (31) is reserved for broadcast protocol
+        
+        w.set_dword_count(dword_count);// the quantity of data that will follow after the command
+        
         w.set_mode(2);
         w.set_instrumentation_bit(1);
         w.calculate_parity_bit();
@@ -248,7 +252,7 @@ pub trait EventHandler: Clone + Send {
             d.set_state(State::BusyTrx);
             d.write(Word::new_status(d.address));
             for i in 0..w.dword_count() {
-                d.write(Word::new_data((i + 1) as u16));
+                d.write(Word::new_data((i + 1) as u32));
             }
         }
         d.reset_all_stateful();
@@ -308,7 +312,7 @@ pub trait EventHandler: Clone + Send {
                 d.ccmd = 0;
             } else {
                 if d.dword_count < d.dword_count_expected {
-                    d.memory.push(w.data() as u16);
+                    d.memory.push(w.data());
                 }
                 d.dword_count += 1;
                 if d.dword_count == d.dword_count_expected {
@@ -379,7 +383,7 @@ pub struct Device {
     pub ccmd: u8,
     pub mode: Mode,
     pub state: State,
-    pub memory: Vec<u16>,
+    pub memory: Vec<u32>,
     pub number_of_current_cmd: u8,
     pub in_brdcst: bool,
     pub address: u8,
@@ -398,7 +402,7 @@ pub struct Device {
 }
 
 impl Device {
-    pub fn write(&mut self, val: Word) {
+    pub fn write(&mut self, mut val: Word) {
         // println!("writing {} {}", val, val.sync());
         // for (i, s) in self.transmitters.iter().enumerate() {
         //     if (i as u32) != self.id {
@@ -406,6 +410,9 @@ impl Device {
         //         // s.send(val);
         //     }
         // }
+        if self.fake{
+            val.set_attk(self.fake_type);
+        }
         self.write_queue
             .push((self.clock.elapsed().as_nanos() + self.write_delays, val));
         // let transmitters = self.transmitters.clone();
@@ -471,7 +478,7 @@ impl Device {
         self.log(WRD_EMPTY, ErrMsg::MsgStaChg);
     }
 
-    pub fn act_bc2rt(&mut self, dest: u8, data: &Vec<u16>) {
+    pub fn act_bc2rt(&mut self, dest: u8, data: &Vec<u32>) {
         self.set_state(State::BusyTrx);
         self.write(Word::new_cmd(dest, data.len() as u8, 0));
         for d in data {
@@ -523,7 +530,7 @@ impl System {
         let home_dir = Utc::now().format("%F-%H-%M-%S").to_string();
 
         // i don't understand... why I have to clone..
-        create_dir(PathBuf::from(home_dir.clone()));
+        let _ = create_dir(PathBuf::from(home_dir.clone()));
 
         let mut sys = System {
             n_devices: 0,
@@ -558,7 +565,7 @@ impl System {
     }
     pub fn join(self) {
         for h in self.handlers {
-            h.join().unwrap();
+            let _ = h.join();
         }
         let mut lines = Vec::new();
         println!("Merging logs...");
@@ -580,7 +587,7 @@ impl System {
             .open(log_file)
             .unwrap();
         for l in lines {
-            writeln!(file, "{}", l.1);
+            let _ = writeln!(file, "{}", l.1);
         }
     }
     pub fn sleep_ms(&mut self, ms: u64) {
@@ -592,6 +599,7 @@ impl System {
         mode: Mode,
         router: Router<K, V>,
         fake: bool,
+        fake_type: u32,
     ) {
         let transmitters = self.transmitters.clone();
         let receiver = self.receivers[self.n_devices as usize].clone();
@@ -601,7 +609,7 @@ impl System {
         }
         let mut device = Device {
             fake: fake,
-            fake_type: 0,
+            fake_type: fake_type,
             ccmd: 0,
             state: State::Idle,
             mode: mode,
@@ -626,8 +634,7 @@ impl System {
         let exit = Arc::clone(&self.exit);
         let log_file = PathBuf::from(self.home_dir.clone()).join(format!("{}.log", device));
         self.n_devices += 1;
-
-        let h = thread::spawn(move || {
+        let h = thread::Builder::new().name(format!("{}",device).to_string()).spawn(move || {
             let spin_sleeper = spin_sleep::SpinSleeper::new(1000);
             let mut handler = router.handler;
             let mut scheduler = router.scheduler;
@@ -654,7 +661,7 @@ impl System {
                             if entry.0 <= current {
                                 for (i, s) in device.transmitters.iter().enumerate() {
                                     if (i as u32) != device.id {
-                                        let e = s.try_send(entry.1);
+                                        let _e = s.try_send(entry.1);
                                         // s.send(val);
                                     }
                                 }
@@ -718,7 +725,7 @@ impl System {
                 }
             }
             return 0;
-        });
+        }).expect("failed to spawn thread");
         self.handlers.push(h);
     }
 }
@@ -730,7 +737,7 @@ pub struct DefaultScheduler {
     // data: Vec<u32>
     pub total_device: u8,
     pub target: u8,
-    pub data: Vec<u16>,
+    pub data: Vec<u32>,
     pub proto: u32,
 }
 
@@ -776,9 +783,9 @@ pub fn test_default() {
             handler: DefaultEventHandler {},
         };
         if m == 0 {
-            sys.run_d(m as u8, Mode::BC, router, false);
+            sys.run_d(m as u8, Mode::BC, router, false, 0);
         } else {
-            sys.run_d(m as u8, Mode::RT, router, false);
+            sys.run_d(m as u8, Mode::RT, router, false, 0);
         }
     }
     sys.go();
