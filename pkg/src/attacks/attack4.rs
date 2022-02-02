@@ -1,56 +1,85 @@
 use crate::sys::{
     DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Router, System,
-    Word, WRD_EMPTY, State,
+    Word, WRD_EMPTY, State, AttackType
 };
 
 #[derive(Clone, Debug)]
-pub struct ShutdownAttackRT {
+pub struct MITMAttackOnRTs {
     pub attack_times: Vec<u128>,
     pub success: bool,
     pub word_count: u8,
-    pub target: u8,         // the target RT
-    pub target_found: bool, // target found in traffic
+    pub injected_words: u8,
+    pub target_src: u8,
+    pub target_dst: u8,
+    pub target_dst_found: bool, // target found in traffic
+    pub target_src_found: bool,
+    pub done: bool,
 }
 
-impl ShutdownAttackRT {
-    fn kill_rt(&mut self, d: &mut Device) {
+impl MITMAttackOnRTs {
+    fn start_mitm(&mut self, d: &mut Device) {
         d.log(
-            WRD_EMPTY,
-            ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", self.target).to_string()),
+            WRD_EMPTY, 
+            ErrMsg::MsgAttk(format!("Starting MITM attack...").to_string()),
         );
-        let word_count = 4;
-        let tr = 1;
         self.attack_times.push(d.clock.elapsed().as_nanos());
-        let w = Word::new_cmd(self.target, word_count, tr);
+        d.set_state(State::Off);
+        let word_count = self.injected_words;
+        let tr = 0;
+        let mut w = Word::new_cmd(self.target_src, word_count, tr);
         d.write(w);
-        self.success = true;
-        d.set_state(State::Off); // Not sure what's going on here yet.  TODO come back to this.
+        w.set_address(self.target_dst);
+        w.set_tr(1);
+        d.write(w);
+        self.done = true;
+        //sleep(time_next_attack) // figure out how to add delays // default is 10
+        d.set_state(State::Idle);
     }
 }
 
-impl EventHandler for ShutdownAttackRT {
+impl EventHandler for MITMAttackOnRTs {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        if w.address() == self.target && self.target_found == false {
-            d.log(
-                WRD_EMPTY,
-                ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", self.target).to_string()),
-            );
-            self.target_found = true;
-            self.kill_rt(d);
+        if !(self.target_src_found && self.target_dst_found) && !self.done {
+            if w.tr() == 0 && !self.target_dst_found && w.address() != 31 {
+                self.target_dst = w.address();
+                self.target_dst_found = true;
+                self.word_count = w.dword_count();
+                if self.injected_words == 0 {
+                    self.injected_words = w.dword_count();
+                }
+                d.log(
+                    WRD_EMPTY, 
+                    ErrMsg::MsgAttk(format!("Atttacker>> Target dst identified (RT{})", self.target_dst).to_string()),
+                );
+            } else if w.tr() == 1 && !self.target_src_found && w.address() != 31 {
+                self.target_src = w.address();
+                self.target_src_found = true;
+                d.log(
+                    WRD_EMPTY, 
+                    ErrMsg::MsgAttk(format!("Atttacker>> Target src identified (RT{})", self.target_src).to_string()),
+                );
+            }
         }
         self.default_on_cmd(d, w);
     }
 
     fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
-        if w.address() == self.target && self.target_found == false {
+        // This replaces "getReady_for_MITM" from Michael's code
+        if self.target_src == w.address() && !self.done {
+            if self.target_dst_found && self.target_src_found {
+                //sleep(self.delay);
+                self.start_mitm(d);
+            }
+        } else if self.target_src == w.address() && self.done {
             d.log(
-                WRD_EMPTY,
-                ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", self.target).to_string()),
+                WRD_EMPTY, 
+                ErrMsg::MsgAttk(format!("Attacker>> Man in the Middle Successfully Completed!")),
             );
-            self.target_found = true;
-            self.kill_rt(d);
+            self.success = true;
+            self.target_src_found = false;
+            self.target_dst_found = false;
+            self.done = false;
         }
-        self.default_on_sts(d, w);
     }
 }
 
@@ -77,9 +106,9 @@ pub fn test_attack4() {
         };
 
         if m == 0 {
-            sys.run_d(m as u8, Mode::BC, default_router, false, 0);
+            sys.run_d(m as u8, Mode::BC, default_router, AttackType::Benign);
         } else {
-            sys.run_d(m as u8, Mode::RT, default_router, false, 0);
+            sys.run_d(m as u8, Mode::RT, default_router, AttackType::Benign);
         }
     }
     let attacker_router = Router {
@@ -91,16 +120,20 @@ pub fn test_attack4() {
             proto: 0,
         },
         // control device-level response
-        handler: ShutdownAttackRT {
+        handler: MITMAttackOnRTs {
             attack_times: Vec::new(),
             word_count: 0u8,
+            injected_words: 0u8,
             success: false,
-            target: 4, // attacking RT address @4
-            target_found: false,
+            target_src: 0u8,
+            target_dst: 0u8,
+            target_dst_found: false, // target found in traffic
+            target_src_found: false,
+            done: false,
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 1);
+    sys.run_d(n_devices - 1, Mode::RT, attacker_router, AttackType::AtkMITMAttackOnRTs);
     sys.go();
     sys.sleep_ms(10);
     sys.stop();

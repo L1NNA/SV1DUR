@@ -385,7 +385,7 @@ pub struct Router<K: Scheduler, V: EventHandler> {
 #[derive(Clone, Debug)]
 pub struct Device {
     pub fake: bool,
-    pub fake_type:u32,
+    pub atk_type: AttackType,
     pub ccmd: u8,
     pub mode: Mode,
     pub state: State,
@@ -417,7 +417,7 @@ impl Device {
         //     }
         // }
         if self.fake{
-            val.set_attk(self.fake_type);
+            val.set_attk(self.atk_type as u32);
         }
         self.write_queue
             .push((self.clock.elapsed().as_nanos() + self.write_delays, val));
@@ -605,18 +605,21 @@ impl System {
         addr: u8,
         mode: Mode,
         router: Router<K, V>,
-        fake: bool,
-        fake_type: u32,
+        atk_type: AttackType,
     ) {
         let transmitters = self.transmitters.clone();
         let receiver = self.receivers[self.n_devices as usize].clone();
         let mut w_delay = self.write_delays;
+        let mut fake = false;
+        if atk_type != AttackType::Benign{
+            fake = true;
+        }
         if fake {
             w_delay = 0;
         }
         let mut device = Device {
             fake: fake,
-            fake_type: fake_type,
+            atk_type: atk_type,
             ccmd: 0,
             state: State::Idle,
             mode: mode,
@@ -770,6 +773,23 @@ pub struct DefaultEventHandler {}
 
 impl EventHandler for DefaultEventHandler {}
 
+
+#[allow(unused)]
+#[derive(Clone, Debug, Copy, PartialEq)]
+pub enum AttackType {
+    Benign = 0,
+    AtkCollisionAttackAgainstTheBus = 1,
+    AtkCollisionAttackAgainstAnRT = 2,
+    AtkDataThrashingAgainstRT = 3,
+    AtkMITMAttackOnRTs = 4,
+    AtkShutdownAttackRT = 5,
+    AtkFakeStatusReccmd = 6,
+    AtkFakeStatusTrcmd = 7,
+    AtkDesynchronizationAttackOnRT = 8,
+    AtkDataCorruptionAttack = 9,
+    AtkCommandInvalidationAttack = 10,
+}
+
 #[allow(unused)]
 pub fn test_default() {
     // let mut delays_single = Vec::new();
@@ -791,9 +811,9 @@ pub fn test_default() {
             handler: DefaultEventHandler {},
         };
         if m == 0 {
-            sys.run_d(m as u8, Mode::BC, router, false, 0);
+            sys.run_d(m as u8, Mode::BC, router, AttackType::Benign);
         } else {
-            sys.run_d(m as u8, Mode::RT, router, false, 0);
+            sys.run_d(m as u8, Mode::RT, router, AttackType::Benign);
         }
     }
     sys.go();

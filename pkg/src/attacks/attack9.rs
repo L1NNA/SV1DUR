@@ -1,37 +1,45 @@
 use crate::sys::{
     DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Router, System,
-    Word, WRD_EMPTY,
+    Word, WRD_EMPTY, AttackType
 };
 
 #[derive(Clone, Debug)]
-pub struct CommandInvalidationAttack {
+pub struct DataCorruptionAttack {
     pub attack_times: Vec<u128>,
     pub success: bool,
+    pub word_count: u8,
     pub target: u8,         // the target RT
     pub target_found: bool, // target found in traffic
 }
 
-impl CommandInvalidationAttack {
+impl DataCorruptionAttack {
     pub fn inject(&mut self, d: &mut Device) {
-        self.attack_times.push(d.clock.elapsed().as_nanos());
-        let dword_count = 31;    // Maximum number of words.  This will mean the receipient ignores the next 31 messages
-        let tr = 0;              // 1: transmit, 0: receive.  We want to receive because it will sit and wait rather than responding to the BC.
-        let w = Word::new_cmd(self.target, dword_count, tr);
         d.log(
-            WRD_EMPTY,
-            ErrMsg::MsgAttk(format!("Attacker>> Injecting fake command on RT{}", w).to_string()),
+            WRD_EMPTY, 
+            ErrMsg::MsgAttk(format!("Attacker>> Injecting a fake status word followed by fake data ...").to_string()),
         );
+        self.attack_times.push(d.clock.elapsed().as_nanos());
+        let w = Word::new_status(self.target);
         d.write(w);
+        for _ in 0..self.word_count {
+            let w = Word::new_data(0x7171);
+            d.log(
+                WRD_EMPTY,
+                ErrMsg::MsgAttk(format!("Fake Data {} ", w).to_string()),
+            );
+            d.write(w);
+        }
         self.success = true;
     }
 }
 
-impl EventHandler for CommandInvalidationAttack {
+impl EventHandler for DataCorruptionAttack {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         // This function replaces "find_RT_tcmd" from Michael's code
         // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
         let destination = w.address();
-        if destination == self.target && self.target_found==false && w.tr() == 1 {
+        self.word_count = w.dword_count();
+        if destination == self.target && self.target_found==false && w.tr() == 1 { // do we need the sub address?
             d.log(
                 *w, 
                 ErrMsg::MsgAttk(format!("Attacker>> Target detected(RT{})", self.target).to_string()),
@@ -66,9 +74,9 @@ pub fn test_attack9() {
         };
 
         if m == 0 {
-            sys.run_d(m as u8, Mode::BC, default_router, false, 0);
+            sys.run_d(m as u8, Mode::BC, default_router, AttackType::Benign);
         } else {
-            sys.run_d(m as u8, Mode::RT, default_router, false, 0);
+            sys.run_d(m as u8, Mode::RT, default_router, AttackType::Benign);
         }
     }
     let attacker_router = Router {
@@ -80,15 +88,16 @@ pub fn test_attack9() {
             proto: 0,
         },
         // control device-level response
-        handler: CommandInvalidationAttack {
+        handler: DataCorruptionAttack {
             attack_times: Vec::new(),
+            word_count: 0u8,
             success: false,
             target: 4, // attacking RT address @4
             target_found: false,
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 1);
+    sys.run_d(n_devices - 1, Mode::RT, attacker_router, AttackType::AtkDataCorruptionAttack);
     sys.go();
     sys.sleep_ms(10);
     sys.stop();
