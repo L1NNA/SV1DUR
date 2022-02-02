@@ -1,6 +1,6 @@
 use crate::sys::{
     DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Router, System,
-    Word, WRD_EMPTY,
+    Word, WRD_EMPTY, AttackType
 };
 
 #[derive(Clone, Debug)]
@@ -74,9 +74,9 @@ pub fn test_attack9() {
         };
 
         if m == 0 {
-            sys.run_d(m as u8, Mode::BC, default_router, false, 0);
+            sys.run_d(m as u8, Mode::BC, default_router, AttackType::Benign);
         } else {
-            sys.run_d(m as u8, Mode::RT, default_router, false, 0);
+            sys.run_d(m as u8, Mode::RT, default_router, AttackType::Benign);
         }
     }
     let attacker_router = Router {
@@ -97,7 +97,7 @@ pub fn test_attack9() {
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 1);
+    sys.run_d(n_devices - 1, Mode::RT, attacker_router, AttackType::AtkDataCorruptionAttack);
     sys.go();
     sys.sleep_ms(10);
     sys.stop();
