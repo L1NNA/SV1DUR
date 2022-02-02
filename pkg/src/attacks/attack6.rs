@@ -4,15 +4,18 @@ use crate::sys::{
 };
 
 #[derive(Clone, Debug)]
-pub struct FakeStatusTrcmd {
+pub struct FakeStatusReccmd {
     pub attack_times: Vec<u128>,
     pub success: bool,
+    pub word_count: u8,
     pub target: u8,         // the target RT
     pub target_found: bool, // target found in traffic
+    pub destination: u8,
 }
 
-impl FakeStatusTrcmd {
+impl FakeStatusReccmd {
     fn fake_status(&mut self, d: &mut Device) {
+        self.target_found = false;
         self.attack_times.push(d.clock.elapsed().as_nanos());
         let w = Word::new_status(self.target);
         d.write(w);
@@ -20,38 +23,52 @@ impl FakeStatusTrcmd {
             WRD_EMPTY,
             ErrMsg::MsgAttk(format!("Fake status injected!").to_string()),
         );
-        self.target_found = false;
         self.success = true;
     }
 }
 
-impl EventHandler for FakeStatusTrcmd {
+impl EventHandler for FakeStatusReccmd {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         let destination = w.address();
         // if w.address() != self.address {} //This line won't work yet.  TODO: Get our address.
-        if self.target != 2u8.pow(5) - 1 { 
-            if destination == self.target && w.tr() == 1 && !self.target_found {
+        if self.target != 2u8.pow(5) - 1 && destination == self.target && w.tr() == 0 {
                 d.log(
                     WRD_EMPTY,
                     ErrMsg::MsgAttk(format!("Attacker>> Target detected (RT{})", self.target).to_string()),
                 );
                 self.target_found = true;
+                self.word_count = w.dword_count();
+                self.destination = w.address();
                 d.log(
                     WRD_EMPTY, 
-                    ErrMsg::MsgAttk(format!("Sending fake status word (after tr_cmd_word)").to_string()),
+                    ErrMsg::MsgAttk(format!("Fake status triggered (after cmd_word)").to_string()),
                 );
-                self.fake_status(d);
-            }
         } else {
-            if w.tr() == 1 && destination != 31 {
+            if w.tr() == 0 && destination != 31 {
                 d.log(
                     WRD_EMPTY,
-                    ErrMsg::MsgAttk(format!("Sending fake status word (after tr_cmd_word)")),
+                    ErrMsg::MsgAttk(format!("Attacker>> Target detected (RT{})", w.address()).to_string()),
                 );
-                self.fake_status(d);
+                self.target_found = true;
+                self.word_count = w.dword_count();
+                self.destination = w.address();
+                d.log(
+                    WRD_EMPTY,
+                    ErrMsg::MsgAttk(format!("Fake status triggered (after cmd_word)").to_string()),
+                );
             }
         }
         self.default_on_cmd(d, w);
+    }
+
+    fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
+        // This takes the place of "intercept_dw" in Michael's code
+        if self.target_found && w.data() != 0xffff {
+            self.word_count -= 1;
+            if self.word_count == 0 {
+                self.fake_status(d);
+            }
+        }
     }
 }
 
@@ -92,11 +109,13 @@ pub fn test_attack6() {
             proto: 0,
         },
         // control device-level response
-        handler: FakeStatusTrcmd {
+        handler: FakeStatusReccmd {
             attack_times: Vec::new(),
+            word_count: 0u8,
             success: false,
             target: 4, // attacking RT address @4
             target_found: false,
+            destination: 0u8,
         },
     };
 

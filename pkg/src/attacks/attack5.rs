@@ -1,74 +1,56 @@
 use crate::sys::{
     DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Router, System,
-    Word, WRD_EMPTY,
+    Word, WRD_EMPTY, State,
 };
 
 #[derive(Clone, Debug)]
-pub struct FakeStatusReccmd {
+pub struct ShutdownAttackRT {
     pub attack_times: Vec<u128>,
     pub success: bool,
     pub word_count: u8,
     pub target: u8,         // the target RT
     pub target_found: bool, // target found in traffic
-    pub destination: u8,
 }
 
-impl FakeStatusReccmd {
-    fn fake_status(&mut self, d: &mut Device) {
-        self.target_found = false;
-        self.attack_times.push(d.clock.elapsed().as_nanos());
-        let w = Word::new_status(self.target);
-        d.write(w);
+impl ShutdownAttackRT {
+    fn kill_rt(&mut self, d: &mut Device) {
         d.log(
             WRD_EMPTY,
-            ErrMsg::MsgAttk(format!("Fake status injected!").to_string()),
+            ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", self.target).to_string()),
         );
+        let word_count = 4;
+        let tr = 1;
+        self.attack_times.push(d.clock.elapsed().as_nanos());
+        let w = Word::new_cmd(self.target, word_count, tr);
+        d.write(w);
         self.success = true;
+        d.set_state(State::Off); // Not sure what's going on here yet.  TODO come back to this.
     }
 }
 
-impl EventHandler for FakeStatusReccmd {
+impl EventHandler for ShutdownAttackRT {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        let destination = w.address();
-        // if w.address() != self.address {} //This line won't work yet.  TODO: Get our address.
-        if self.target != 2u8.pow(5) - 1 && destination == self.target && w.tr() == 0 {
-                d.log(
-                    WRD_EMPTY,
-                    ErrMsg::MsgAttk(format!("Attacker>> Target detected (RT{})", self.target).to_string()),
-                );
-                self.target_found = true;
-                self.word_count = w.dword_count();
-                self.destination = w.address();
-                d.log(
-                    WRD_EMPTY, 
-                    ErrMsg::MsgAttk(format!("Fake status triggered (after cmd_word)").to_string()),
-                );
-        } else {
-            if w.tr() == 0 && destination != 31 {
-                d.log(
-                    WRD_EMPTY,
-                    ErrMsg::MsgAttk(format!("Attacker>> Target detected (RT{})", w.address()).to_string()),
-                );
-                self.target_found = true;
-                self.word_count = w.dword_count();
-                self.destination = w.address();
-                d.log(
-                    WRD_EMPTY,
-                    ErrMsg::MsgAttk(format!("Fake status triggered (after cmd_word)").to_string()),
-                );
-            }
+        if w.address() == self.target && self.target_found == false {
+            d.log(
+                WRD_EMPTY,
+                ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", self.target).to_string()),
+            );
+            self.target_found = true;
+            self.kill_rt(d);
         }
         self.default_on_cmd(d, w);
     }
 
-    fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
-        // This takes the place of "intercept_dw" in Michael's code
-        if self.target_found && w.data() != 0xffff {
-            self.word_count -= 1;
-            if self.word_count == 0 {
-                self.fake_status(d);
-            }
+    fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
+        if w.address() == self.target && self.target_found == false {
+            d.log(
+                WRD_EMPTY,
+                ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", self.target).to_string()),
+            );
+            self.target_found = true;
+            self.kill_rt(d);
         }
+        self.default_on_sts(d, w);
     }
 }
 
@@ -109,13 +91,12 @@ pub fn test_attack5() {
             proto: 0,
         },
         // control device-level response
-        handler: FakeStatusReccmd {
+        handler: ShutdownAttackRT {
             attack_times: Vec::new(),
             word_count: 0u8,
             success: false,
             target: 4, // attacking RT address @4
             target_found: false,
-            destination: 0u8,
         },
     };
 

@@ -4,19 +4,18 @@ use crate::sys::{
 };
 
 #[derive(Clone, Debug)]
-pub struct CollisionAttackAgainstAnRT {
-    pub nwords_inj: u8,
-    pub attack_times: Vec<u128>,
+pub struct CollisionAttackAgainstTheBus {
+    pub nwords_inj: u32,
+    pub started: u128,
     pub success: bool,
-    pub target: u8,         // the target RT
-    pub target_found: bool, // target found in traffic
-    pub wc_n: u16,          // words to be injected
 }
 
-impl CollisionAttackAgainstAnRT {
+impl CollisionAttackAgainstTheBus {
     pub fn inject(&mut self, d: &mut Device) {
-        self.attack_times.push(d.clock.elapsed().as_nanos());
-        self.success = true;
+        if self.started == 0 {
+            self.started = d.clock.elapsed().as_nanos();
+            self.success = true;
+        }
         for i in 0..self.nwords_inj {
             let w = Word::new_data(i as u32);
             d.log(
@@ -28,43 +27,29 @@ impl CollisionAttackAgainstAnRT {
     }
 }
 
-impl EventHandler for CollisionAttackAgainstAnRT {
+impl EventHandler for CollisionAttackAgainstTheBus {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        if w.address() == self.target {
-            d.log(
-                *w,
-                ErrMsg::MsgAttk("Jamming launched (after cmd)".to_string()),
-            );
-            self.nwords_inj = w.dword_count();
-            self.target_found = true;
-            self.inject(d);
-        }
+        d.log(
+            *w,
+            ErrMsg::MsgAttk("Jamming launched (after cmd)".to_string()),
+        );
+        self.inject(d);
         self.default_on_cmd(d, w);
     }
     fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
-        if w.address() == self.target && self.target_found {
-            d.log(
-                *w,
-                ErrMsg::MsgAttk("Jamming launched (after data)".to_string()),
-            );
-            self.inject(d);
-            self.wc_n -= 1;
-            if self.wc_n == 0 {
-                // attacker has recieved the equivalent number
-                // of messages
-                self.target_found = false;
-            }
-        }
+        d.log(
+            *w,
+            ErrMsg::MsgAttk("Jamming launched (after data)".to_string()),
+        );
+        self.inject(d);
         self.default_on_dat(d, w);
     }
     fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
-        if w.address() == self.target {
-            d.log(
-                *w,
-                ErrMsg::MsgAttk("Jamming launched (after status)".to_string()),
-            );
-            self.inject(d);
-        }
+        d.log(
+            *w,
+            ErrMsg::MsgAttk("Jamming launched (after status)".to_string()),
+        );
+        self.inject(d);
         self.default_on_dat(d, w);
     }
 }
@@ -106,13 +91,10 @@ pub fn test_attack1() {
             proto: 0,
         },
         // control device-level response
-        handler: CollisionAttackAgainstAnRT {
-            nwords_inj: 0,
-            attack_times: Vec::new(),
+        handler: CollisionAttackAgainstTheBus {
+            nwords_inj: 5,
+            started: 0,
             success: false,
-            target: 5, // attacking RT address @5
-            wc_n: 0,   // expected word count (intercepted)
-            target_found: false,
         },
     };
 

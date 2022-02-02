@@ -4,83 +4,54 @@ use crate::sys::{
 };
 
 #[derive(Clone, Debug)]
-pub struct DesynchronizationAttackOnRT {
+pub struct FakeStatusTrcmd {
     pub attack_times: Vec<u128>,
     pub success: bool,
-    pub word_count: u8,
-    pub flag: u8,
     pub target: u8,         // the target RT
     pub target_found: bool, // target found in traffic
 }
 
-impl DesynchronizationAttackOnRT {
-    fn desynchronize_rt(&mut self, d: &mut Device) {
+impl FakeStatusTrcmd {
+    fn fake_status(&mut self, d: &mut Device) {
+        self.attack_times.push(d.clock.elapsed().as_nanos());
+        let w = Word::new_status(self.target);
+        d.write(w);
         d.log(
             WRD_EMPTY,
-            ErrMsg::MsgAttk(format!("Attacker>> Desynchronizing RT{} ...", self.target).to_string()),
+            ErrMsg::MsgAttk(format!("Fake status injected!").to_string()),
         );
-        let tr = 0;
-        let word_count = 17;
-        self.attack_times.push(d.clock.elapsed().as_nanos());
-        let w = Word::new_cmd(self.target, word_count, tr);
-        d.write(w);
-        let w = Word::new_data(0x000F);
-        d.write(w);
-        self.target_found = true;
+        self.target_found = false;
         self.success = true;
     }
 }
 
-impl EventHandler for DesynchronizationAttackOnRT {
+impl EventHandler for FakeStatusTrcmd {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        // This function replaces "find_RT_tcmd" and "find_RT_rcmd" from Michael's code
-        // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
         let destination = w.address();
-        self.word_count = w.dword_count();
-        if destination == self.target && self.target_found==false { // do we need the sub address?
-            if self.flag == 0 {
-                let new_flag;
-                if w.tr() == 1 {
-                    new_flag = 2;
-                    self.word_count = w.dword_count();
-                } else {
-                    new_flag = 1;
-                }
-                self.flag = new_flag;
+        // if w.address() != self.address {} //This line won't work yet.  TODO: Get our address.
+        if self.target != 2u8.pow(5) - 1 { 
+            if destination == self.target && w.tr() == 1 && !self.target_found {
+                d.log(
+                    WRD_EMPTY,
+                    ErrMsg::MsgAttk(format!("Attacker>> Target detected (RT{})", self.target).to_string()),
+                );
+                self.target_found = true;
+                d.log(
+                    WRD_EMPTY, 
+                    ErrMsg::MsgAttk(format!("Sending fake status word (after tr_cmd_word)").to_string()),
+                );
+                self.fake_status(d);
             }
-            if w.tr() == 0 {
-                self.word_count = w.dword_count();
+        } else {
+            if w.tr() == 1 && destination != 31 {
+                d.log(
+                    WRD_EMPTY,
+                    ErrMsg::MsgAttk(format!("Sending fake status word (after tr_cmd_word)")),
+                );
+                self.fake_status(d);
             }
-            self.target_found = true;
-            d.log(
-                *w, 
-                ErrMsg::MsgAttk(format!("Attacker>> Target detected(RT{})", self.target).to_string()),
-            );
         }
         self.default_on_cmd(d, w);
-    }
-
-    #[allow(unused)]
-    fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
-        // This replaces "watch_data" in Michael's code.
-        if self.word_count > 0 {
-            self.word_count -= 1;
-        }
-        if self.flag == 2 && self.word_count == 0 {
-            // sleep(3);
-            self.desynchronize_rt(d);
-        }
-    }
-
-    fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
-        if w.address() == self.target {
-            if self.flag == 1 && self.word_count == 0 {
-                // sleep(3);
-                self.desynchronize_rt(d);
-            } else if self.flag == 2 {
-
-            }
-        }
     }
 }
 
@@ -121,11 +92,9 @@ pub fn test_attack7() {
             proto: 0,
         },
         // control device-level response
-        handler: DesynchronizationAttackOnRT {
+        handler: FakeStatusTrcmd {
             attack_times: Vec::new(),
-            word_count: 0u8,
             success: false,
-            flag: 0,
             target: 4, // attacking RT address @4
             target_found: false,
         },

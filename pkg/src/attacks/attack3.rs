@@ -1,85 +1,56 @@
 use crate::sys::{
     DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Router, System,
-    Word, WRD_EMPTY, State,
+    Word, WRD_EMPTY,
 };
 
 #[derive(Clone, Debug)]
-pub struct MITMAttackOnRTs {
+pub struct DataThrashingAgainstRT {
     pub attack_times: Vec<u128>,
     pub success: bool,
     pub word_count: u8,
-    pub injected_words: u8,
-    pub target_src: u8,
-    pub target_dst: u8,
-    pub target_dst_found: bool, // target found in traffic
-    pub target_src_found: bool,
-    pub done: bool,
+    pub target: u8,         // the target RT
+    pub target_found: bool, // target found in traffic
 }
 
-impl MITMAttackOnRTs {
-    fn start_mitm(&mut self, d: &mut Device) {
-        d.log(
-            WRD_EMPTY, 
-            ErrMsg::MsgAttk(format!("Starting MITM attack...").to_string()),
-        );
+impl DataThrashingAgainstRT {
+    fn inject_words(&mut self, d: &mut Device) {
         self.attack_times.push(d.clock.elapsed().as_nanos());
-        d.set_state(State::Off);
-        let word_count = self.injected_words;
+        let word_count = 30;
         let tr = 0;
-        let mut w = Word::new_cmd(self.target_src, word_count, tr);
+        let w = Word::new_cmd(self.target, word_count, tr);
         d.write(w);
-        w.set_address(self.target_dst);
-        w.set_tr(1);
-        d.write(w);
-        self.done = true;
-        //sleep(time_next_attack) // figure out how to add delays // default is 10
-        d.set_state(State::Idle);
+        self.success = true;
     }
 }
 
-impl EventHandler for MITMAttackOnRTs {
+impl EventHandler for DataThrashingAgainstRT {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        if !(self.target_src_found && self.target_dst_found) && !self.done {
-            if w.tr() == 0 && !self.target_dst_found && w.address() != 31 {
-                self.target_dst = w.address();
-                self.target_dst_found = true;
-                self.word_count = w.dword_count();
-                if self.injected_words == 0 {
-                    self.injected_words = w.dword_count();
-                }
-                d.log(
-                    WRD_EMPTY, 
-                    ErrMsg::MsgAttk(format!("Atttacker>> Target dst identified (RT{})", self.target_dst).to_string()),
-                );
-            } else if w.tr() == 1 && !self.target_src_found && w.address() != 31 {
-                self.target_src = w.address();
-                self.target_src_found = true;
-                d.log(
-                    WRD_EMPTY, 
-                    ErrMsg::MsgAttk(format!("Atttacker>> Target src identified (RT{})", self.target_src).to_string()),
-                );
-            }
+        // This replaces 'jam_cmdwords' from Michael's code
+        if w.address() == self.target && w.tr() == 0 {
+            self.target_found = true;
+            self.word_count = w.dword_count();
+            d.log(
+                WRD_EMPTY, 
+                ErrMsg::MsgAttk(format!("Thrashing triggered (after cmd_word)").to_string()),
+            );
         }
         self.default_on_cmd(d, w);
     }
 
-    fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
-        // This replaces "getReady_for_MITM" from Michael's code
-        if self.target_src == w.address() && !self.done {
-            if self.target_dst_found && self.target_src_found {
-                //sleep(self.delay);
-                self.start_mitm(d);
+    fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
+        // This replaces 'jam_datawords' from Michael's code
+        if self.target_found {
+            self.word_count -= 1;
+            if self.word_count == 0 {
+                self.target_found = false;
+                d.log(
+                    WRD_EMPTY, 
+                    ErrMsg::MsgAttk(format!("Fake command injected!").to_string()),
+                );
+                self.inject_words(d);
             }
-        } else if self.target_src == w.address() && self.done {
-            d.log(
-                WRD_EMPTY, 
-                ErrMsg::MsgAttk(format!("Attacker>> Man in the Middle Successfully Completed!")),
-            );
-            self.success = true;
-            self.target_src_found = false;
-            self.target_dst_found = false;
-            self.done = false;
         }
+        self.default_on_dat(d, w);
     }
 }
 
@@ -120,16 +91,12 @@ pub fn test_attack3() {
             proto: 0,
         },
         // control device-level response
-        handler: MITMAttackOnRTs {
+        handler: DataThrashingAgainstRT {
             attack_times: Vec::new(),
             word_count: 0u8,
-            injected_words: 0u8,
             success: false,
-            target_src: 0u8,
-            target_dst: 0u8,
-            target_dst_found: false, // target found in traffic
-            target_src_found: false,
-            done: false,
+            target: 2, // attacking RT address @2
+            target_found: false,
         },
     };
 
