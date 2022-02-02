@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 pub const WRD_EMPTY: Word = Word { 0: 0 };
 pub const CONFIG_PRINT_LOGS: bool = false;
 
+#[allow(unused)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ErrMsg {
     MsgEmpt,
@@ -85,7 +86,7 @@ bitfield! {
 
 impl fmt::Display for Word {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "w:{:#026b}", self.0) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
+        write!(f, "w:{:#027b}", self.0) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
     }
 }
 
@@ -140,6 +141,7 @@ impl Word {
     }
 }
 
+#[allow(unused)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Mode {
     RT,
@@ -153,6 +155,7 @@ impl fmt::Display for Mode {
     }
 }
 
+#[allow(unused)]
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum State {
     Idle,
@@ -203,10 +206,13 @@ pub trait EventHandler: Clone + Send {
         self.default_on_sts(d, w);
     }
 
+    #[allow(unused)]
     fn default_on_wrd_rec(&mut self, d: &mut Device, w: &mut Word) {
         // for bm to monitor every word
         // d.log(*w, ErrMsg::MsgEntWrdRec);
     }
+
+    #[allow(unused)]
     fn default_on_err_parity(&mut self, d: &mut Device, w: &mut Word) {
         // log error tba
         // d.log(*w, ErrMsg::MsgEntErrPty);
@@ -557,6 +563,7 @@ impl System {
         self.go.store(true, Ordering::Relaxed);
     }
 
+    #[allow(unused)]
     pub fn pause(&mut self) {
         self.go.store(false, Ordering::Relaxed);
     }
@@ -763,6 +770,7 @@ pub struct DefaultEventHandler {}
 
 impl EventHandler for DefaultEventHandler {}
 
+#[allow(unused)]
 pub fn test_default() {
     // let mut delays_single = Vec::new();
     let n_devices = 8;

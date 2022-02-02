@@ -4,46 +4,88 @@ use crate::sys::{
 };
 
 #[derive(Clone, Debug)]
-pub struct CommandInvalidationAttack {
+pub struct DesynchronizationAttackOnRT {
     pub attack_times: Vec<u128>,
     pub success: bool,
+    pub word_count: u8,
+    pub flag: u8,
     pub target: u8,         // the target RT
     pub target_found: bool, // target found in traffic
 }
 
-impl CommandInvalidationAttack {
-    pub fn inject(&mut self, d: &mut Device) {
-        self.attack_times.push(d.clock.elapsed().as_nanos());
-        let dword_count = 31;    // Maximum number of words.  This will mean the receipient ignores the next 31 messages
-        let tr = 0;              // 1: transmit, 0: receive.  We want to receive because it will sit and wait rather than responding to the BC.
-        let w = Word::new_cmd(self.target, dword_count, tr);
+impl DesynchronizationAttackOnRT {
+    fn desynchronize_rt(&mut self, d: &mut Device) {
         d.log(
             WRD_EMPTY,
-            ErrMsg::MsgAttk(format!("Attacker>> Injecting fake command on RT{}", w).to_string()),
+            ErrMsg::MsgAttk(format!("Attacker>> Desynchronizing RT{} ...", self.target).to_string()),
         );
+        let tr = 0;
+        let word_count = 17;
+        self.attack_times.push(d.clock.elapsed().as_nanos());
+        let w = Word::new_cmd(self.target, word_count, tr);
         d.write(w);
+        let w = Word::new_data(0x000F);
+        d.write(w);
+        self.target_found = true;
         self.success = true;
     }
 }
 
-impl EventHandler for CommandInvalidationAttack {
+impl EventHandler for DesynchronizationAttackOnRT {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        // This function replaces "find_RT_tcmd" from Michael's code
+        // This function replaces "find_RT_tcmd" and "find_RT_rcmd" from Michael's code
         // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
         let destination = w.address();
-        if destination == self.target && self.target_found==false && w.tr() == 1 {
+        self.word_count = w.dword_count();
+        if destination == self.target && self.target_found==false { // do we need the sub address?
+            if self.flag == 0 {
+                let new_flag;
+                if w.tr() == 1 {
+                    new_flag = 2;
+                    self.word_count = w.dword_count();
+                } else {
+                    new_flag = 1;
+                }
+                self.flag = new_flag;
+            }
+            if w.tr() == 0 {
+                self.word_count = w.dword_count();
+            }
+            self.target_found = true;
             d.log(
                 *w, 
                 ErrMsg::MsgAttk(format!("Attacker>> Target detected(RT{})", self.target).to_string()),
             );
-            self.target_found = true;
-            self.inject(d);
         }
         self.default_on_cmd(d, w);
     }
+
+    #[allow(unused)]
+    fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
+        // This replaces "watch_data" in Michael's code.
+        if self.word_count > 0 {
+            self.word_count -= 1;
+        }
+        if self.flag == 2 && self.word_count == 0 {
+            // sleep(3);
+            self.desynchronize_rt(d);
+        }
+    }
+
+    fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
+        if w.address() == self.target {
+            if self.flag == 1 && self.word_count == 0 {
+                // sleep(3);
+                self.desynchronize_rt(d);
+            } else if self.flag == 2 {
+
+            }
+        }
+    }
 }
 
-pub fn test_attack9() {
+#[allow(dead_code)]
+pub fn test_attack7() {
     // let mut delays_single = Vec::new();
     let n_devices = 8;
     // normal device has 4ns delays (while attacker has zero)
@@ -79,15 +121,17 @@ pub fn test_attack9() {
             proto: 0,
         },
         // control device-level response
-        handler: CommandInvalidationAttack {
+        handler: DesynchronizationAttackOnRT {
             attack_times: Vec::new(),
+            word_count: 0u8,
             success: false,
-            target: 4, // attacking RT address @5
+            flag: 0,
+            target: 4, // attacking RT address @4
             target_found: false,
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 10);
+    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 1);
     sys.go();
     sys.sleep_ms(10);
     sys.stop();

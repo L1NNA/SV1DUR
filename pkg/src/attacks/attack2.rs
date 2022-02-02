@@ -4,72 +4,58 @@ use crate::sys::{
 };
 
 #[derive(Clone, Debug)]
-pub struct CollisionAttackAgainstAnRT {
-    pub nwords_inj: u8,
+pub struct DataThrashingAgainstRT {
     pub attack_times: Vec<u128>,
     pub success: bool,
+    pub word_count: u8,
     pub target: u8,         // the target RT
     pub target_found: bool, // target found in traffic
-    pub wc_n: u16,          // words to be injected
 }
 
-impl CollisionAttackAgainstAnRT {
-    pub fn inject(&mut self, d: &mut Device) {
+impl DataThrashingAgainstRT {
+    fn inject_words(&mut self, d: &mut Device) {
         self.attack_times.push(d.clock.elapsed().as_nanos());
+        let word_count = 30;
+        let tr = 0;
+        let w = Word::new_cmd(self.target, word_count, tr);
+        d.write(w);
         self.success = true;
-        for i in 0..self.nwords_inj {
-            let w = Word::new_data(i as u32);
-            d.log(
-                WRD_EMPTY,
-                ErrMsg::MsgAttk(format!("Sent Fake Data {} ", w).to_string()),
-            );
-            d.write(w);
-        }
     }
 }
 
-impl EventHandler for CollisionAttackAgainstAnRT {
+impl EventHandler for DataThrashingAgainstRT {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        if w.address() == self.target {
-            d.log(
-                *w,
-                ErrMsg::MsgAttk("Jamming launched (after cmd)".to_string()),
-            );
-            self.nwords_inj = w.dword_count();
+        // This replaces 'jam_cmdwords' from Michael's code
+        if w.address() == self.target && w.tr() == 0 {
             self.target_found = true;
-            self.inject(d);
+            self.word_count = w.dword_count();
+            d.log(
+                WRD_EMPTY, 
+                ErrMsg::MsgAttk(format!("Thrashing triggered (after cmd_word)").to_string()),
+            );
         }
         self.default_on_cmd(d, w);
     }
+
     fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
-        if w.address() == self.target && self.target_found {
-            d.log(
-                *w,
-                ErrMsg::MsgAttk("Jamming launched (after data)".to_string()),
-            );
-            self.inject(d);
-            self.wc_n -= 1;
-            if self.wc_n == 0 {
-                // attacker has recieved the equivalent number
-                // of messages
+        // This replaces 'jam_datawords' from Michael's code
+        if self.target_found {
+            self.word_count -= 1;
+            if self.word_count == 0 {
                 self.target_found = false;
+                d.log(
+                    WRD_EMPTY, 
+                    ErrMsg::MsgAttk(format!("Fake command injected!").to_string()),
+                );
+                self.inject_words(d);
             }
         }
         self.default_on_dat(d, w);
     }
-    fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
-        if w.address() == self.target {
-            d.log(
-                *w,
-                ErrMsg::MsgAttk("Jamming launched (after status)".to_string()),
-            );
-            self.inject(d);
-        }
-        self.default_on_dat(d, w);
-    }
 }
 
-pub fn test_attack1() {
+#[allow(dead_code)]
+pub fn test_attack2() {
     // let mut delays_single = Vec::new();
     let n_devices = 8;
     // normal device has 4ns delays (while attacker has zero)
@@ -105,12 +91,11 @@ pub fn test_attack1() {
             proto: 0,
         },
         // control device-level response
-        handler: CollisionAttackAgainstAnRT {
-            nwords_inj: 0,
+        handler: DataThrashingAgainstRT {
             attack_times: Vec::new(),
+            word_count: 0u8,
             success: false,
-            target: 5, // attacking RT address @5
-            wc_n: 0,   // expected word count (intercepted)
+            target: 2, // attacking RT address @2
             target_found: false,
         },
     };

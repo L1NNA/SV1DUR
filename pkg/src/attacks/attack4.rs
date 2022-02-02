@@ -4,60 +4,58 @@ use crate::sys::{
 };
 
 #[derive(Clone, Debug)]
-pub struct DataThrashingAgainstRT {
+pub struct ShutdownAttackRT {
     pub attack_times: Vec<u128>,
     pub success: bool,
     pub word_count: u8,
-    pub injected_words: u8,
-    pub flag: u8,
     pub target: u8,         // the target RT
     pub target_found: bool, // target found in traffic
-    pub destination: u8,
 }
 
-impl DataThrashingAgainstRT {
-    fn inject_words(&mut self, d: &mut Device) {
+impl ShutdownAttackRT {
+    fn kill_rt(&mut self, d: &mut Device) {
+        d.log(
+            WRD_EMPTY,
+            ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", self.target).to_string()),
+        );
+        let word_count = 4;
+        let tr = 1;
         self.attack_times.push(d.clock.elapsed().as_nanos());
-        let word_count = 30;
-        let tr = 0;
         let w = Word::new_cmd(self.target, word_count, tr);
         d.write(w);
         self.success = true;
+        d.set_state(State::Off); // Not sure what's going on here yet.  TODO come back to this.
     }
 }
 
-impl EventHandler for DataThrashingAgainstRT {
+impl EventHandler for ShutdownAttackRT {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        // This replaces 'jam_cmdwords' from Michael's code
-        if w.address() == self.target && w.tr() == 0 {
-            self.target_found = true;
-            self.word_count = w.dword_count();
+        if w.address() == self.target && self.target_found == false {
             d.log(
-                WRD_EMPTY, 
-                ErrMsg::MsgAttk(format!("Thrashing triggered (after cmd_word)").to_string()),
+                WRD_EMPTY,
+                ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", self.target).to_string()),
             );
+            self.target_found = true;
+            self.kill_rt(d);
         }
         self.default_on_cmd(d, w);
     }
 
-    fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
-        // This replaces 'jam_datawords' from Michael's code
-        if self.target_found {
-            self.word_count -= 1;
-            if self.word_count == 0 {
-                self.target_found = false;
-                d.log(
-                    WRD_EMPTY, 
-                    ErrMsg::MsgAttk(format!("Fake command injected!").to_string()),
-                );
-                self.inject_words(d);
-            }
+    fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
+        if w.address() == self.target && self.target_found == false {
+            d.log(
+                WRD_EMPTY,
+                ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", self.target).to_string()),
+            );
+            self.target_found = true;
+            self.kill_rt(d);
         }
-        self.default_on_dat(d, w);
+        self.default_on_sts(d, w);
     }
 }
 
-pub fn test_attack2() {
+#[allow(dead_code)]
+pub fn test_attack4() {
     // let mut delays_single = Vec::new();
     let n_devices = 8;
     // normal device has 4ns delays (while attacker has zero)
@@ -93,19 +91,16 @@ pub fn test_attack2() {
             proto: 0,
         },
         // control device-level response
-        handler: DataThrashingAgainstRT {
+        handler: ShutdownAttackRT {
             attack_times: Vec::new(),
             word_count: 0u8,
-            injected_words: 0u8,
             success: false,
-            flag: 0,
-            target: 2, // attacking RT address @4
+            target: 4, // attacking RT address @4
             target_found: false,
-            destination: 0u8,
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 0);
+    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 1);
     sys.go();
     sys.sleep_ms(10);
     sys.stop();

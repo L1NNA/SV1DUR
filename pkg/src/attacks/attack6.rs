@@ -7,8 +7,6 @@ use crate::sys::{
 pub struct FakeStatusTrcmd {
     pub attack_times: Vec<u128>,
     pub success: bool,
-    pub word_count: u8,
-    pub flag: u8,
     pub target: u8,         // the target RT
     pub target_found: bool, // target found in traffic
 }
@@ -57,6 +55,7 @@ impl EventHandler for FakeStatusTrcmd {
     }
 }
 
+#[allow(dead_code)]
 pub fn test_attack6() {
     // let mut delays_single = Vec::new();
     let n_devices = 8;
@@ -95,15 +94,13 @@ pub fn test_attack6() {
         // control device-level response
         handler: FakeStatusTrcmd {
             attack_times: Vec::new(),
-            word_count: 0u8,
             success: false,
-            flag: 0,
-            target: 4, // attacking RT address @5
+            target: 4, // attacking RT address @4
             target_found: false,
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 0);
+    sys.run_d(n_devices - 1, Mode::RT, attacker_router, false, 1);
     sys.go();
     sys.sleep_ms(10);
     sys.stop();
