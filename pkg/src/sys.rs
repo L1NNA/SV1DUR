@@ -399,7 +399,7 @@ pub struct Device {
     pub clock: Instant,
     pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
     pub transmitters: Vec<Sender<Word>>,
-    pub read_queue: Vec<(u128, Word)>,
+    pub read_queue: Vec<(u128, Word, bool)>,
     pub write_queue: Vec<(u128, Word)>,
     pub write_delays: u128,
     pub receiver: Receiver<Word>,
@@ -682,26 +682,33 @@ impl System {
                         // device.write_queue.clear();
                     }
 
+                    let word_time = 0; //20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
                     let res = device.read();
                     if !res.is_err() {
                         let current = device.clock.elapsed().as_nanos();
                         let mut w = res.unwrap();
-                        device.read_queue.push((current, w));
+                        let collision: bool;
+                        let elements = device.read_queue.len();
+                        if elements > 0 && device.read_queue[elements - 1].0 > current - word_time { // if the message was received before the previous message finished
+                            collision = true; // we need to acknowledge that there was a collision.  Parity error should only happen 50% of the time, but we'll say it always happens.
+                            device.read_queue[elements - 1].2 = true; // ensure the previous message is marked as a collision
+                        } else {
+                            collision = false;
+                        }
+                        device.read_queue.push((current, w, collision));
                         handler.on_wrd_rec(&mut device, &mut w);
                     }
                     let rq = device.read_queue.clone(); // clone to avoid mutable vs immutable borrows
                     if rq.len() > 0 {
                         let current = device.clock.elapsed().as_nanos();
-                        let word_time = 0; // 20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
-                        for (i, entry) in rq.iter().enumerate() {
+                        for entry in rq.iter() {
                             if entry.0 <= current - word_time { // if the start time was 20us ago, we just finished receiving it
                                 let mut w = entry.1;
-                                if rq.len() > i + 1 && rq[i+1].0 <= entry.0 + word_time { // if the next message already started transmitting, before the first one finished, we get a parity error and both messages fail to deliver
-                                    handler.on_err_parity(&mut device, &mut w); // Parity error
-                                    device.write_queue.retain(|x| (*x).0 > entry.0 + word_time);
+                                if entry.2 { // if the next message already started transmitting, before the first one finished, we get a parity error and both messages fail to deliver
+                                    handler.on_err_parity(&mut device, &mut w);
                                 } else {
                                     // Previous message was valid
-                                    // synchronizatoin bit distinguishes data/(command/status) word
+                                    // synchronization bit distinguishes data/(command/status) word
                                     if w.sync() == 1 {
                                         // device.log(w, ErrMsg::MsgEntCmd);
                                         if w.instrumentation_bit() == 1 {
@@ -714,8 +721,8 @@ impl System {
                                         // data word
                                         handler.on_dat(&mut device, &mut w);
                                     }
-                                    device.write_queue.retain(|x| (*x).0 > entry.0 + word_time);
                                 }
+                                device.read_queue.retain(|x| (*x).0 > current);
                             }
                         }
                     }
