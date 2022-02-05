@@ -215,7 +215,7 @@ pub trait EventHandler: Clone + Send {
     #[allow(unused)]
     fn default_on_err_parity(&mut self, d: &mut Device, w: &mut Word) {
         // log error tba
-        // d.log(*w, ErrMsg::MsgEntErrPty);
+        d.log(*w, ErrMsg::MsgEntErrPty);
     }
     fn default_on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         // cmds are only for RT, matching self's address
@@ -399,6 +399,7 @@ pub struct Device {
     pub clock: Instant,
     pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
     pub transmitters: Vec<Sender<Word>>,
+    pub read_queue: Vec<(u128, Word, bool)>,
     pub write_queue: Vec<(u128, Word)>,
     pub write_delays: u128,
     pub receiver: Receiver<Word>,
@@ -634,6 +635,7 @@ impl System {
             clock: self.clock,
             transmitters: transmitters,
             write_queue: Vec::new(),
+            read_queue: Vec::new(),
             receiver: receiver,
             delta_t_avg: 0,
             delta_t_count: 0,
@@ -677,26 +679,51 @@ impl System {
                                 }
                             }
                         }
-                        device.write_queue.retain(|x| (*x).0 > current);
                         // device.write_queue.clear();
                     }
 
+                    let word_time = 0; //20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
                     let res = device.read();
                     if !res.is_err() {
+                        let current = device.clock.elapsed().as_nanos();
                         let mut w = res.unwrap();
-                        handler.on_wrd_rec(&mut device, &mut w);
-                        // synchronizatoin bit distinguishes data/(command/status) word
-                        if w.sync() == 1 {
-                            // device.log(w, ErrMsg::MsgEntCmd);
-                            if w.instrumentation_bit() == 1 {
-                                handler.on_cmd(&mut device, &mut w)
-                            } else {
-                                // status word
-                                handler.on_sts(&mut device, &mut w);
-                            }
+                        let collision: bool;
+                        let elements = device.read_queue.len();
+                        if elements > 0 && device.read_queue[elements - 1].0 > current - word_time { // if the message was received before the previous message finished
+                            collision = true; // we need to acknowledge that there was a collision.  Parity error should only happen 50% of the time, but we'll say it always happens.
+                            device.read_queue[elements - 1].2 = true; // ensure the previous message is marked as a collision
                         } else {
-                            // data word
-                            handler.on_dat(&mut device, &mut w);
+                            collision = false;
+                        }
+                        device.read_queue.push((current, w, collision));
+                        handler.on_wrd_rec(&mut device, &mut w);
+                    }
+                    let rq = device.read_queue.clone(); // clone to avoid mutable vs immutable borrows
+                    if rq.len() > 0 {
+                        let current = device.clock.elapsed().as_nanos();
+                        for entry in rq.iter() {
+                            if entry.0 <= current - word_time { // if the start time was 20us ago, we just finished receiving it
+                                let mut w = entry.1;
+                                if entry.2 { // if the next message already started transmitting, before the first one finished, we get a parity error and both messages fail to deliver
+                                    handler.on_err_parity(&mut device, &mut w);
+                                } else {
+                                    // Previous message was valid
+                                    // synchronization bit distinguishes data/(command/status) word
+                                    if w.sync() == 1 {
+                                        // device.log(w, ErrMsg::MsgEntCmd);
+                                        if w.instrumentation_bit() == 1 {
+                                            handler.on_cmd(&mut device, &mut w)
+                                        } else {
+                                            // status word
+                                            handler.on_sts(&mut device, &mut w);
+                                        }
+                                    } else {
+                                        // data word
+                                        handler.on_dat(&mut device, &mut w);
+                                    }
+                                }
+                                device.read_queue.retain(|x| (*x).0 > current);
+                            }
                         }
                     }
                 }
