@@ -1,6 +1,6 @@
 use crate::sys::{
-    DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Router, System,
-    Word, WRD_EMPTY, AttackType
+    AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
+    Router, System, Word, WRD_EMPTY,
 };
 
 #[derive(Clone, Debug)]
@@ -15,8 +15,11 @@ pub struct DataCorruptionAttack {
 impl DataCorruptionAttack {
     pub fn inject(&mut self, d: &mut Device) {
         d.log(
-            WRD_EMPTY, 
-            ErrMsg::MsgAttk(format!("Attacker>> Injecting a fake status word followed by fake data ...").to_string()),
+            WRD_EMPTY,
+            ErrMsg::MsgAttk(
+                format!("Attacker>> Injecting a fake status word followed by fake data ...")
+                    .to_string(),
+            ),
         );
         self.attack_times.push(d.clock.elapsed().as_nanos());
         let w = Word::new_status(self.target);
@@ -39,10 +42,13 @@ impl EventHandler for DataCorruptionAttack {
         // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
         let destination = w.address();
         self.word_count = w.dword_count();
-        if destination == self.target && self.target_found==false && w.tr() == 1 { // do we need the sub address?
+        if destination == self.target && self.target_found == false && w.tr() == 1 {
+            // do we need the sub address?
             d.log(
-                *w, 
-                ErrMsg::MsgAttk(format!("Attacker>> Target detected(RT{})", self.target).to_string()),
+                *w,
+                ErrMsg::MsgAttk(
+                    format!("Attacker>> Target detected(RT{})", self.target).to_string(),
+                ),
             );
             self.target_found = true;
             self.inject(d);
@@ -67,7 +73,8 @@ pub fn test_attack9() {
                 total_device: n_devices - 1,
                 target: 0,
                 data: vec![1, 2, 3],
-                proto: 0,
+                proto: Proto::BC2RT,
+                proto_rotate: true,
             },
             // control device-level response
             handler: DefaultEventHandler {},
@@ -85,7 +92,8 @@ pub fn test_attack9() {
             total_device: n_devices - 1,
             target: 0,
             data: vec![1, 2, 3],
-            proto: 0,
+            proto: Proto::BC2RT,
+            proto_rotate: true,
         },
         // control device-level response
         handler: DataCorruptionAttack {
@@ -97,7 +105,12 @@ pub fn test_attack9() {
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, AttackType::AtkDataCorruptionAttack);
+    sys.run_d(
+        n_devices - 1,
+        Mode::RT,
+        attacker_router,
+        AttackType::AtkDataCorruptionAttack,
+    );
     sys.go();
     sys.sleep_ms(10);
     sys.stop();

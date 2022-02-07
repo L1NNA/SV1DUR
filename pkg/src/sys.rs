@@ -109,22 +109,18 @@ impl Word {
     pub fn new_cmd(addr: u8, dword_count: u8, tr: u8) -> Word {
         let mut w = Word { 0: 0 };
         w.set_sync(1);
-        
         w.set_tr(tr); // 1: transmit, 0: receive
-        
         w.set_address(addr); // the RT address which is five bits long
-        // address 11111 (31) is reserved for broadcast protocol
-        
-        w.set_dword_count(dword_count);// the quantity of data that will follow after the command
-        
+                             // address 11111 (31) is reserved for broadcast protocol
+
+        w.set_dword_count(dword_count); // the quantity of data that will follow after the command
         w.set_mode(2);
         w.set_instrumentation_bit(1);
         w.calculate_parity_bit();
         return w;
-    }    
-    
+    }
     #[allow(unused)]
-    pub fn calculate_parity_bit(&mut self){
+    pub fn calculate_parity_bit(&mut self) {
         /*
         This code will calculate and apply the parity bit.  This will not affect other bits in the bitfield.
         */
@@ -134,8 +130,7 @@ impl Word {
         let parity_odd = true;
         if int.count_ones() % 2 == 0 {
             self.set_parity_bit(!parity_odd as u8);
-        }
-        else {
+        } else {
             self.set_parity_bit(parity_odd as u8);
         }
     }
@@ -373,7 +368,7 @@ pub trait EventHandler: Clone + Send {
 }
 
 pub trait Scheduler: Clone + Send {
-    fn on_bc_ready(&mut self, d: &mut Device);
+    fn on_bc_ready(&mut self, d: &mut Device) {};
 }
 
 #[derive(Clone, Debug)]
@@ -417,7 +412,7 @@ impl Device {
         //         // s.send(val);
         //     }
         // }
-        if self.fake{
+        if self.fake {
             val.set_attk(self.atk_type as u32);
         }
         self.write_queue
@@ -612,7 +607,7 @@ impl System {
         let receiver = self.receivers[self.n_devices as usize].clone();
         let mut w_delay = self.write_delays;
         let mut fake = false;
-        if atk_type != AttackType::Benign{
+        if atk_type != AttackType::Benign {
             fake = true;
         }
         if fake {
@@ -646,125 +641,141 @@ impl System {
         let exit = Arc::clone(&self.exit);
         let log_file = PathBuf::from(self.home_dir.clone()).join(format!("{}.log", device));
         self.n_devices += 1;
-        let h = thread::Builder::new().name(format!("{}",device).to_string()).spawn(move || {
-            let spin_sleeper = spin_sleep::SpinSleeper::new(1000);
-            let mut handler = router.handler;
-            let mut scheduler = router.scheduler;
+        let h = thread::Builder::new()
+            .name(format!("{}", device).to_string())
+            .spawn(move || {
+                let spin_sleeper = spin_sleep::SpinSleeper::new(1000);
+                let mut handler = router.handler;
+                let mut scheduler = router.scheduler;
 
-            loop {
-                if !go.load(Ordering::Relaxed) || device.state == State::Off {
-                    spin_sleeper.sleep_ns(1000_000);
-                }
-                {
-                    if device.mode == Mode::BC && device.state == State::Idle {
-                        scheduler.on_bc_ready(&mut device);
+                loop {
+                    if !go.load(Ordering::Relaxed) || device.state == State::Off {
+                        spin_sleeper.sleep_ns(1000_000);
                     }
-                    // if device.mode == Mode::BC{
-                    //     println!("here")
-                    // }
-
-                    // write is `asynchrnoized`
-                    let wq = device.write_queue.len();
-                    if wq > 0 {
-                        let current = device.clock.elapsed().as_nanos();
-
-                        for entry in device.write_queue.iter() {
-                            // if now it is the time to actually write
-                            if entry.0 <= current {
-                                for (i, s) in device.transmitters.iter().enumerate() {
-                                    if (i as u32) != device.id {
-                                        let _e = s.try_send(entry.1);
-                                        // s.send(val);
-                                    }
-                                }
-                            }
+                    {
+                        if device.mode == Mode::BC && device.state == State::Idle {
+                            scheduler.on_bc_ready(&mut device);
                         }
-                        // device.write_queue.clear();
-                    }
+                        // if device.mode == Mode::BC{
+                        //     println!("here")
+                        // }
 
-                    let word_time = 0; //20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
-                    let res = device.read();
-                    if !res.is_err() {
-                        let current = device.clock.elapsed().as_nanos();
-                        let mut w = res.unwrap();
-                        let collision: bool;
-                        let elements = device.read_queue.len();
-                        if elements > 0 && device.read_queue[elements - 1].0 > current - word_time { // if the message was received before the previous message finished
-                            collision = true; // we need to acknowledge that there was a collision.  Parity error should only happen 50% of the time, but we'll say it always happens.
-                            device.read_queue[elements - 1].2 = true; // ensure the previous message is marked as a collision
-                        } else {
-                            collision = false;
-                        }
-                        device.read_queue.push((current, w, collision));
-                        handler.on_wrd_rec(&mut device, &mut w);
-                    }
-                    let rq = device.read_queue.clone(); // clone to avoid mutable vs immutable borrows
-                    if rq.len() > 0 {
-                        let current = device.clock.elapsed().as_nanos();
-                        for entry in rq.iter() {
-                            if entry.0 <= current - word_time { // if the start time was 20us ago, we just finished receiving it
-                                let mut w = entry.1;
-                                if entry.2 { // if the next message already started transmitting, before the first one finished, we get a parity error and both messages fail to deliver
-                                    handler.on_err_parity(&mut device, &mut w);
-                                } else {
-                                    // Previous message was valid
-                                    // synchronization bit distinguishes data/(command/status) word
-                                    if w.sync() == 1 {
-                                        // device.log(w, ErrMsg::MsgEntCmd);
-                                        if w.instrumentation_bit() == 1 {
-                                            handler.on_cmd(&mut device, &mut w)
-                                        } else {
-                                            // status word
-                                            handler.on_sts(&mut device, &mut w);
+                        // write is `asynchrnoized`
+                        let wq = device.write_queue.len();
+                        if wq > 0 {
+                            let current = device.clock.elapsed().as_nanos();
+
+                            for entry in device.write_queue.iter() {
+                                // if now it is the time to actually write
+                                if entry.0 <= current {
+                                    for (i, s) in device.transmitters.iter().enumerate() {
+                                        if (i as u32) != device.id {
+                                            let _e = s.try_send(entry.1);
+                                            // s.send(val);
                                         }
-                                    } else {
-                                        // data word
-                                        handler.on_dat(&mut device, &mut w);
                                     }
                                 }
-                                device.read_queue.retain(|x| (*x).0 > current);
+                            }
+                            // device.write_queue.clear();
+                        }
+
+                        let word_time = 0; //20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
+                        let res = device.read();
+                        if !res.is_err() {
+                            let current = device.clock.elapsed().as_nanos();
+                            let mut w = res.unwrap();
+                            let collision: bool;
+                            let elements = device.read_queue.len();
+                            if elements > 0
+                                && device.read_queue[elements - 1].0 > current - word_time
+                            {
+                                // if the message was received before the previous message finished
+                                collision = true; // we need to acknowledge that there was a collision.  Parity error should only happen 50% of the time, but we'll say it always happens.
+                                device.read_queue[elements - 1].2 = true; // ensure the previous message is marked as a collision
+                            } else {
+                                collision = false;
+                            }
+                            device.read_queue.push((current, w, collision));
+                            handler.on_wrd_rec(&mut device, &mut w);
+                        }
+                        let rq = device.read_queue.clone(); // clone to avoid mutable vs immutable borrows
+                        if rq.len() > 0 {
+                            let current = device.clock.elapsed().as_nanos();
+                            for entry in rq.iter() {
+                                if entry.0 <= current - word_time {
+                                    // if the start time was 20us ago, we just finished receiving it
+                                    let mut w = entry.1;
+                                    if entry.2 {
+                                        // if the next message already started transmitting, before the first one finished, we get a parity error and both messages fail to deliver
+                                        handler.on_err_parity(&mut device, &mut w);
+                                    } else {
+                                        // Previous message was valid
+                                        // synchronization bit distinguishes data/(command/status) word
+                                        if w.sync() == 1 {
+                                            // device.log(w, ErrMsg::MsgEntCmd);
+                                            if w.instrumentation_bit() == 1 {
+                                                handler.on_cmd(&mut device, &mut w)
+                                            } else {
+                                                // status word
+                                                handler.on_sts(&mut device, &mut w);
+                                            }
+                                        } else {
+                                            // data word
+                                            handler.on_dat(&mut device, &mut w);
+                                        }
+                                    }
+                                    device.read_queue.retain(|x| (*x).0 > current);
+                                }
                             }
                         }
                     }
-                }
-                if exit.load(Ordering::Relaxed) {
-                    //exiting
-                    println!(
-                        "{} writing {} logs to {} ",
-                        device,
-                        device.logs.len(),
-                        log_file.to_str().unwrap()
-                    );
-                    let mut file = OpenOptions::new()
-                        .write(true)
-                        .append(true)
-                        .create(true)
-                        .open(log_file)
-                        .unwrap();
-                    let device_des = device.to_string();
-                    for l in device.logs {
-                        writeln!(
-                            file,
-                            "{} {}{:02}-{:02} {:^15} {} {:^16} avg_d_t:{}",
-                            l.0,
-                            l.1,
-                            l.2,
-                            l.3,
-                            l.4.to_string(),
-                            l.5,
-                            l.6.value(),
-                            l.7
-                        )
-                        .unwrap();
+                    if exit.load(Ordering::Relaxed) {
+                        //exiting
+                        println!(
+                            "{} writing {} logs to {} ",
+                            device,
+                            device.logs.len(),
+                            log_file.to_str().unwrap()
+                        );
+                        let mut file = OpenOptions::new()
+                            .write(true)
+                            .append(true)
+                            .create(true)
+                            .open(log_file)
+                            .unwrap();
+                        let device_des = device.to_string();
+                        for l in device.logs {
+                            writeln!(
+                                file,
+                                "{} {}{:02}-{:02} {:^15} {} {:^16} avg_d_t:{}",
+                                l.0,
+                                l.1,
+                                l.2,
+                                l.3,
+                                l.4.to_string(),
+                                l.5,
+                                l.6.value(),
+                                l.7
+                            )
+                            .unwrap();
+                        }
+                        println!("{} Done flushing logs", device_des);
+                        break;
                     }
-                    println!("{} Done flushing logs", device_des);
-                    break;
                 }
-            }
-            return 0;
-        }).expect("failed to spawn thread");
+                return 0;
+            })
+            .expect("failed to spawn thread");
         self.handlers.push(h);
     }
+}
+
+#[allow(unused)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Proto {
+    RT2RT = 0,
+    BC2RT = 1,
+    RT2BC = 2,
 }
 
 #[derive(Clone, Debug)]
@@ -775,7 +786,8 @@ pub struct DefaultScheduler {
     pub total_device: u8,
     pub target: u8,
     pub data: Vec<u32>,
-    pub proto: u32,
+    pub proto: Proto,
+    pub proto_rotate: bool,
 }
 
 impl Scheduler for DefaultScheduler {
@@ -786,20 +798,38 @@ impl Scheduler for DefaultScheduler {
         // d.act_rt2bc(self.target, self.data.len() as u8);
         // a simple rotating scheduler
         match self.proto {
-            0 => d.act_rt2rt(self.target, another_target, self.data.len() as u8),
-            1 => d.act_bc2rt(self.target, &self.data),
-            2 => d.act_rt2bc(self.target, self.data.len() as u8),
+            RT2RT => {
+                d.act_rt2rt(self.target, another_target, self.data.len() as u8);
+                if self.proto_rotate {
+                    self.proto = Proto::BC2RT;
+                }
+            }
+            BC2RT => {
+                d.act_bc2rt(self.target, &self.data);
+                if self.proto_rotate {
+                    self.proto = Proto::RT2BC;
+                }
+            }
+            RT2BC => {
+                d.act_rt2bc(self.target, self.data.len() as u8);
+                if self.proto_rotate {
+                    self.proto = Proto::RT2RT;
+                }
+            }
             _ => {}
         }
-        self.proto += 1;
-        self.proto %= 3;
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct EmptyScheduler {}
+impl Scheduler for EmptyScheduler {
+}
+
 #[derive(Clone, Debug)]
 pub struct DefaultEventHandler {}
 
 impl EventHandler for DefaultEventHandler {}
-
 
 #[allow(unused)]
 #[derive(Clone, Debug, Copy, PartialEq)]
@@ -832,7 +862,8 @@ pub fn test_default() {
                 total_device: n_devices,
                 target: 0,
                 data: vec![1, 2, 3],
-                proto: 0,
+                proto: Proto::BC2RT,
+                proto_rotate: false,
             },
             // control device-level response
             handler: DefaultEventHandler {},
