@@ -18,6 +18,8 @@ pub const CONFIG_PRINT_LOGS: bool = false;
 #[derive(Clone, Debug, PartialEq)]
 pub enum ErrMsg {
     MsgEmpt,
+    MsgWrt,
+    MsgBCReady,
     MsgStaChg,
     MsgEntWrdRec,
     MsgEntErrPty,
@@ -34,6 +36,8 @@ impl ErrMsg {
     fn value(&self) -> String {
         match self {
             ErrMsg::MsgEmpt => "".to_owned(),
+            ErrMsg::MsgWrt => "Wrt".to_owned(),
+            ErrMsg::MsgBCReady => "BC is ready".to_owned(),
             ErrMsg::MsgStaChg => "Status Changed".to_owned(),
             ErrMsg::MsgEntWrdRec => "Word Received".to_owned(),
             ErrMsg::MsgEntErrPty => "Parity Error".to_owned(),
@@ -86,7 +90,7 @@ bitfield! {
 
 impl fmt::Display for Word {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "w:{:#027b}", self.0) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
+        write!(f, "w:{:#027b}[{}]", self.0, self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
     }
 }
 
@@ -335,6 +339,7 @@ pub trait EventHandler: Clone + Send {
             // check delta_t
             if d.delta_t_start != 0 {
                 let delta_t = d.clock.elapsed().as_nanos() - d.delta_t_start;
+                // delta_t has to be in between 4 and 12
                 d.delta_t_avg += delta_t;
                 d.delta_t_count += 1;
             }
@@ -368,7 +373,7 @@ pub trait EventHandler: Clone + Send {
 }
 
 pub trait Scheduler: Clone + Send {
-    fn on_bc_ready(&mut self, d: &mut Device) {};
+    fn on_bc_ready(&mut self, d: &mut Device) {}
 }
 
 #[derive(Clone, Debug)]
@@ -415,8 +420,14 @@ impl Device {
         if self.fake {
             val.set_attk(self.atk_type as u32);
         }
-        self.write_queue
-            .push((self.clock.elapsed().as_nanos() + self.write_delays, val));
+        if self.write_queue.len() < 1 {
+            self.write_queue
+                .push((self.clock.elapsed().as_nanos() + self.write_delays, val));
+        } else {
+            // println!("here {} {} {:?}, {}", self, self.write_queue.len(), self.write_queue.last().unwrap().0, self.write_delays);
+            self.write_queue
+                .push((self.write_queue.last().unwrap().0 + self.write_delays, val));
+        }
         // let transmitters = self.transmitters.clone();
         // let id = self.id.clone();
         // thread::spawn(move || {
@@ -647,6 +658,8 @@ impl System {
                 let spin_sleeper = spin_sleep::SpinSleeper::new(1000);
                 let mut handler = router.handler;
                 let mut scheduler = router.scheduler;
+                // read_time, valid message flag, word
+                let mut prev_word = (0, false, WRD_EMPTY);
 
                 loop {
                     if !go.load(Ordering::Relaxed) || device.state == State::Off {
@@ -654,6 +667,7 @@ impl System {
                     }
                     {
                         if device.mode == Mode::BC && device.state == State::Idle {
+                            device.log(WRD_EMPTY, ErrMsg::MsgBCReady);
                             scheduler.on_bc_ready(&mut device);
                         }
                         // if device.mode == Mode::BC{
@@ -662,9 +676,9 @@ impl System {
 
                         // write is `asynchrnoized`
                         let wq = device.write_queue.len();
+                        let current = device.clock.elapsed().as_nanos();
                         if wq > 0 {
-                            let current = device.clock.elapsed().as_nanos();
-
+                            let mut w_logs = Vec::new();
                             for entry in device.write_queue.iter() {
                                 // if now it is the time to actually write
                                 if entry.0 <= current {
@@ -674,60 +688,102 @@ impl System {
                                             // s.send(val);
                                         }
                                     }
+                                    w_logs.push((entry.1, ErrMsg::MsgWrt));
                                 }
                             }
+                            for wl in w_logs {
+                                device.log(wl.0, wl.1);
+                            }
+                            // clearing all the data (otherwise delta_t keeps increasing)
+                            device.write_queue.retain(|x| (*x).0 > current);
                             // device.write_queue.clear();
                         }
 
-                        let word_time = 0; //20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
+                        let word_load_time = 0; //20; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
                         let res = device.read();
                         if !res.is_err() {
-                            let current = device.clock.elapsed().as_nanos();
-                            let mut w = res.unwrap();
-                            let collision: bool;
-                            let elements = device.read_queue.len();
-                            if elements > 0
-                                && device.read_queue[elements - 1].0 > current - word_time
-                            {
-                                // if the message was received before the previous message finished
-                                collision = true; // we need to acknowledge that there was a collision.  Parity error should only happen 50% of the time, but we'll say it always happens.
-                                device.read_queue[elements - 1].2 = true; // ensure the previous message is marked as a collision
-                            } else {
-                                collision = false;
-                            }
-                            device.read_queue.push((current, w, collision));
-                            handler.on_wrd_rec(&mut device, &mut w);
-                        }
-                        let rq = device.read_queue.clone(); // clone to avoid mutable vs immutable borrows
-                        if rq.len() > 0 {
-                            let current = device.clock.elapsed().as_nanos();
-                            for entry in rq.iter() {
-                                if entry.0 <= current - word_time {
-                                    // if the start time was 20us ago, we just finished receiving it
-                                    let mut w = entry.1;
-                                    if entry.2 {
-                                        // if the next message already started transmitting, before the first one finished, we get a parity error and both messages fail to deliver
-                                        handler.on_err_parity(&mut device, &mut w);
-                                    } else {
-                                        // Previous message was valid
-                                        // synchronization bit distinguishes data/(command/status) word
-                                        if w.sync() == 1 {
-                                            // device.log(w, ErrMsg::MsgEntCmd);
-                                            if w.instrumentation_bit() == 1 {
-                                                handler.on_cmd(&mut device, &mut w)
-                                            } else {
-                                                // status word
-                                                handler.on_sts(&mut device, &mut w);
-                                            }
-                                        } else {
-                                            // data word
-                                            handler.on_dat(&mut device, &mut w);
-                                        }
+                            if prev_word.0 == 0 {
+                                // empty cache, do replacement
+                                prev_word = (current, true, res.unwrap());
+                            } else if current - prev_word.0 < word_load_time {
+                                // collision
+                                let mut w = res.unwrap();
+                                if w.address() == device.address {
+                                    if prev_word.1 {
+                                        // if previous word is a valid message then file parity error
+                                        // if not, the error was already filed.
+                                        handler.on_err_parity(&mut device, &mut prev_word.2);
                                     }
-                                    device.read_queue.retain(|x| (*x).0 > current);
+                                    handler.on_err_parity(&mut device, &mut w);
                                 }
+                                // replaced with new timestamp, and invalid message flag (collided)
+                                prev_word = (current, false, w);
                             }
                         }
+                        if prev_word.1 {
+                            // message in the cache is valid & after word_time . processe the word.
+                            let mut w = prev_word.2;
+                            if w.sync() == 1 {
+                                if w.instrumentation_bit() == 1 {
+                                    handler.on_cmd(&mut device, &mut w)
+                                } else {
+                                    // status word
+                                    handler.on_sts(&mut device, &mut w);
+                                }
+                            } else {
+                                // data word
+                                handler.on_dat(&mut device, &mut w);
+                            }
+                            // clear cache
+                            prev_word = (0, false, WRD_EMPTY);
+                        }
+                        //     if !res.is_err() {
+                        //         let current = device.clock.elapsed().as_nanos();
+                        //         let mut w = res.unwrap();
+                        //         let collision: bool;
+                        //         let elements = device.read_queue.len();
+                        //         if elements > 0
+                        //             && device.read_queue[elements - 1].0 > current - word_time
+                        //         {
+                        //             // if the message was received before the previous message finished
+                        //             collision = true; // we need to acknowledge that there was a collision.  Parity error should only happen 50% of the time, but we'll say it always happens.
+                        //             device.read_queue[elements - 1].2 = true; // ensure the previous message is marked as a collision
+                        //         } else {
+                        //             collision = false;
+                        //         }
+                        //         device.read_queue.push((current, w, collision));
+                        //         handler.on_wrd_rec(&mut device, &mut w);
+                        //     }
+                        //     let rq = device.read_queue.clone(); // clone to avoid mutable vs immutable borrows
+                        //     if rq.len() > 0 {
+                        //         let current = device.clock.elapsed().as_nanos();
+                        //         for entry in rq.iter() {
+                        //             if entry.0 <= current - word_time {
+                        //                 // if the start time was 20us ago, we just finished receiving it
+                        //                 let mut w = entry.1;
+                        //                 if entry.2 {
+                        //                     // if the next message already started transmitting, before the first one finished, we get a parity error and both messages fail to deliver
+                        //                     handler.on_err_parity(&mut device, &mut w);
+                        //                 } else {
+                        //                     // Previous message was valid
+                        //                     // synchronization bit distinguishes data/(command/status) word
+                        //                     if w.sync() == 1 {
+                        //                         // device.log(w, ErrMsg::MsgEntCmd);
+                        //                         if w.instrumentation_bit() == 1 {
+                        //                             handler.on_cmd(&mut device, &mut w)
+                        //                         } else {
+                        //                             // status word
+                        //                             handler.on_sts(&mut device, &mut w);
+                        //                         }
+                        //                     } else {
+                        //                         // data word
+                        //                         handler.on_dat(&mut device, &mut w);
+                        //                     }
+                        //                 }
+                        //                 device.read_queue.retain(|x| (*x).0 > current);
+                        //             }
+                        //         }
+                        //     }
                     }
                     if exit.load(Ordering::Relaxed) {
                         //exiting
@@ -798,33 +854,31 @@ impl Scheduler for DefaultScheduler {
         // d.act_rt2bc(self.target, self.data.len() as u8);
         // a simple rotating scheduler
         match self.proto {
-            RT2RT => {
+            Proto::RT2RT => {
                 d.act_rt2rt(self.target, another_target, self.data.len() as u8);
                 if self.proto_rotate {
                     self.proto = Proto::BC2RT;
                 }
             }
-            BC2RT => {
+            Proto::BC2RT => {
                 d.act_bc2rt(self.target, &self.data);
                 if self.proto_rotate {
                     self.proto = Proto::RT2BC;
                 }
             }
-            RT2BC => {
+            Proto::RT2BC => {
                 d.act_rt2bc(self.target, self.data.len() as u8);
                 if self.proto_rotate {
                     self.proto = Proto::RT2RT;
                 }
             }
-            _ => {}
         }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct EmptyScheduler {}
-impl Scheduler for EmptyScheduler {
-}
+impl Scheduler for EmptyScheduler {}
 
 #[derive(Clone, Debug)]
 pub struct DefaultEventHandler {}
