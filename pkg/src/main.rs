@@ -12,8 +12,8 @@ fn main() {
     // test_default();
     // test_attack0();
     // test_attack1();
-    // test_attack2();
-    test_attack3();
+    test_attack2();
+    // test_attack3();
     // test_attack4();
     // test_attack5();
     // test_attack6();
