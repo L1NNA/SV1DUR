@@ -13,7 +13,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 pub const WRD_EMPTY: Word = Word { 0: 0 };
 pub const CONFIG_PRINT_LOGS: bool = false;
-pub const CONFIG_SAVE_DEVICE_LOGS: bool = false;
+pub const CONFIG_SAVE_DEVICE_LOGS: bool = true;
 pub const CONFIG_SAVE_SYS_LOGS: bool = true;
 
 #[allow(unused)]
@@ -547,6 +547,7 @@ pub struct System {
     pub exit: Arc<AtomicBool>,
     pub handlers: Vec<thread::JoinHandle<u32>>,
     pub devices: Vec<Arc<Mutex<Device>>>,
+    pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
     pub home_dir: String,
     pub write_delays: u128,
 }
@@ -571,6 +572,7 @@ impl System {
             home_dir: home_dir,
             write_delays: write_delays,
             devices: Vec::new(),
+            logs: Vec::new(),
         };
         for _ in 0..sys.max_devices {
             let (s1, r1) = bounded(512);
@@ -592,18 +594,17 @@ impl System {
     pub fn stop(&mut self) {
         self.exit.store(true, Ordering::Relaxed);
     }
-    pub fn join(self) {
+    pub fn join(mut self) -> Vec<Arc<Mutex<Device>>> {
         for h in self.handlers {
             let _ = h.join();
         }
-        let mut lines = Vec::new();
         println!("Merging logs...");
         for device_mx in &self.devices {
             let device = device_mx.lock().unwrap();
-            device.log_merge(&mut lines);
+            device.log_merge(&mut self.logs);
         }
 
-        lines.sort_by_key(|k| k.0);
+        self.logs.sort_by_key(|k| k.0);
         if CONFIG_SAVE_SYS_LOGS {
             let log_file = PathBuf::from(self.home_dir.clone()).join("sys.log");
             let mut file = OpenOptions::new()
@@ -612,10 +613,11 @@ impl System {
                 .create(true)
                 .open(log_file)
                 .unwrap();
-            for l in lines {
+            for l in self.logs {
                 let _ = writeln!(file, "{}", format_log(&l));
             }
         }
+        return self.devices.clone();
     }
     pub fn sleep_ms(&mut self, ms: u64) {
         thread::sleep(Duration::from_millis(ms));
@@ -910,79 +912,45 @@ pub enum AttackType {
     AtkCommandInvalidationAttack = 10,
 }
 
-#[allow(unused)]
-pub fn test_default() {
-    // let mut delays_single = Vec::new();
-    let n_devices = 8;
-    let w_delays = 0;
-    let mut sys = System::new(n_devices as u32, w_delays);
-    for m in 0..n_devices {
-        // let (s1, r1) = bounded(64);
-        // s_vec.lock().unwrap().push(s1);
-        let router = Router {
-            // control all communications
-            scheduler: DefaultScheduler {
-                total_device: n_devices,
-                target: 0,
-                data: vec![1, 2, 3],
-                proto: Proto::BC2RT,
-                proto_rotate: false,
-            },
-            // control device-level response
-            handler: DefaultEventHandler {},
-        };
-        if m == 0 {
-            sys.run_d(m as u8, Mode::BC, router, AttackType::Benign);
-        } else {
-            sys.run_d(m as u8, Mode::RT, router, AttackType::Benign);
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn test_delta_t() {
+        // let mut delays_single = Vec::new();
+        let n_devices = 8;
+        let w_delays = 0;
+        let mut sys = System::new(n_devices as u32, w_delays);
+        for m in 0..n_devices {
+            // let (s1, r1) = bounded(64);
+            // s_vec.lock().unwrap().push(s1);
+            let router = Router {
+                // control all communications
+                scheduler: DefaultScheduler {
+                    total_device: n_devices,
+                    target: 0,
+                    data: vec![1, 2, 3],
+                    proto: Proto::BC2RT,
+                    proto_rotate: true,
+                },
+                // control device-level response
+                handler: DefaultEventHandler {},
+            };
+            if m == 0 {
+                sys.run_d(m as u8, Mode::BC, router, AttackType::Benign);
+            } else {
+                sys.run_d(m as u8, Mode::RT, router, AttackType::Benign);
+            }
         }
+        sys.go();
+        sys.sleep_ms(10);
+        sys.stop();
+        let devices = sys.join();
+        let bc_mx = devices[0].clone();
+        let bc = bc_mx.lock().unwrap();
+        assert!(bc.delta_t_count > 0);
+        assert!(bc.delta_t_avg / bc.delta_t_count < 40000);
     }
-    sys.go();
-    sys.sleep_ms(10);
-    sys.stop();
-    sys.join();
-    // let mut delays = Vec::new();
-    // loop {
-    //     let (w3, index): (Result<Word, RecvError>, usize) = recv_multiple2(&r_vec);
-    //     // println!("{} boardcast rcv", clock.elapsed().as_micros());
-    //     // for s in &s_vec {
-    //     let mut c = clock.elapsed().as_nanos();
-    //     for (i, s) in s_vec.iter().enumerate() {
-    //         if i != index {
-    //             s.try_send(w3.unwrap());
-    //         }
-    //     }
-    //     // println!("{} boardcast snt", clock.elapsed().as_micros());
-    //     c = clock.elapsed().as_nanos() - c;
-
-    //     // delays.push(c as u64);
-    //     // if delays.len() % 100000 == 0 {
-    //     //     println!("avg sent-delays per 10000 boardcast {}", average(&delays),);
-    //     //     delays.clear();
-    //     // }
-    // }
-
-    // Send a message and then receive one.
-    // loop {
-    //     // c = clock.elapsed().as_nanos();
-    //     // println!("{} ", clock.elapsed().as_nanos());
-    //     // let mut w = Word { 0: 0 };
-    //     // w.set_data(k + 1);
-    //     // s.send(w).unwrap();
-    //     // w = r.recv().unwrap();
-    //     // k = w.data();
-    //     // c = clock.elapsed().as_nanos() - c;
-    //     // delays.push(c as u64);
-    //     // if k % 10000 == 0 {
-    //     //     println!(
-    //     //         "done. avg round-delays per 10000 rounds {}",
-    //     //         average(&delays)
-    //     //     );
-    //     //     delays.clear();
-    //     // }
-    //     let w: Word = recv_multiple(&r_vec).unwrap();
-    //     for s in &s_vec {
-    //         s.send(w).unwrap();
-    //     }
-    // }
 }
