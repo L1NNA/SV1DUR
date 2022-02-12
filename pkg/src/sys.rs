@@ -951,6 +951,6 @@ mod tests {
         let bc_mx = devices[0].clone();
         let bc = bc_mx.lock().unwrap();
         assert!(bc.delta_t_count > 0);
-        assert!(bc.delta_t_avg / bc.delta_t_count < 40000);
+        assert!(bc.delta_t_avg / bc.delta_t_count < 120_000);
     }
 }
