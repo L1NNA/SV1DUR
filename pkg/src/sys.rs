@@ -8,11 +8,13 @@ use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 pub const WRD_EMPTY: Word = Word { 0: 0 };
 pub const CONFIG_PRINT_LOGS: bool = false;
+pub const CONFIG_SAVE_DEVICE_LOGS: bool = false;
+pub const CONFIG_SAVE_SYS_LOGS: bool = true;
 
 #[allow(unused)]
 #[derive(Clone, Debug, PartialEq)]
@@ -53,6 +55,21 @@ impl ErrMsg {
         }
     }
 }
+
+fn format_log(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> String {
+    return format!(
+        "{} {}{:02}-{:02} {:^15} {} {:^16} avg_d_t:{}",
+        l.0,
+        l.1,
+        l.2,
+        l.3,
+        l.4.to_string(),
+        l.5,
+        l.6.value(),
+        l.7
+    );
+}
+
 bitfield! {
     #[derive(Copy, Clone)]
     pub struct Word(u32);
@@ -471,19 +488,15 @@ impl Device {
             avg_delta_t,
         );
         if CONFIG_PRINT_LOGS {
-            println!(
-                "{} {}{:02}-{:02} {:^15} {} {:^16} avg_d_t:{}",
-                l.0,
-                l.1,
-                l.2,
-                l.3,
-                l.4.to_string(),
-                l.5,
-                l.6.value(),
-                l.7,
-            );
+            println!("{}", format_log(&l));
         }
         self.logs.push(l);
+    }
+
+    pub fn log_merge(&self, log_list: &mut Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>) {
+        for l in &self.logs {
+            log_list.push(l.clone());
+        }
     }
 
     pub fn set_state(&mut self, state: State) {
@@ -533,6 +546,7 @@ pub struct System {
     pub go: Arc<AtomicBool>,
     pub exit: Arc<AtomicBool>,
     pub handlers: Vec<thread::JoinHandle<u32>>,
+    pub devices: Vec<Arc<Mutex<Device>>>,
     pub home_dir: String,
     pub write_delays: u128,
 }
@@ -556,6 +570,7 @@ impl System {
             handlers: Vec::new(),
             home_dir: home_dir,
             write_delays: write_delays,
+            devices: Vec::new(),
         };
         for _ in 0..sys.max_devices {
             let (s1, r1) = bounded(512);
@@ -583,25 +598,23 @@ impl System {
         }
         let mut lines = Vec::new();
         println!("Merging logs...");
-        for path in read_dir(self.home_dir.clone()).unwrap() {
-            let f = File::open(path.unwrap().path()).expect("Unable to open file");
-            let br = BufReader::new(f);
-            for line in br.lines() {
-                let ln: String = line.unwrap();
-                let split: Vec<&str> = ln.split(' ').collect();
-                lines.push((split[0].parse::<u128>().unwrap(), ln));
-            }
+        for device_mx in &self.devices {
+            let device = device_mx.lock().unwrap();
+            device.log_merge(&mut lines);
         }
+
         lines.sort_by_key(|k| k.0);
-        let log_file = PathBuf::from(self.home_dir.clone()).join("sys.log");
-        let mut file = OpenOptions::new()
-            .write(true)
-            .append(true)
-            .create(true)
-            .open(log_file)
-            .unwrap();
-        for l in lines {
-            let _ = writeln!(file, "{}", l.1);
+        if CONFIG_SAVE_SYS_LOGS {
+            let log_file = PathBuf::from(self.home_dir.clone()).join("sys.log");
+            let mut file = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .create(true)
+                .open(log_file)
+                .unwrap();
+            for l in lines {
+                let _ = writeln!(file, "{}", format_log(&l));
+            }
         }
     }
     pub fn sleep_ms(&mut self, ms: u64) {
@@ -624,7 +637,7 @@ impl System {
         if fake {
             w_delay = 0;
         }
-        let mut device = Device {
+        let mut device_obj = Device {
             fake: fake,
             atk_type: atk_type,
             ccmd: 0,
@@ -648,18 +661,24 @@ impl System {
             delta_t_start: 0,
             write_delays: w_delay,
         };
+        let device_name = format!("{}", device_obj);
         let go = Arc::clone(&self.go);
         let exit = Arc::clone(&self.exit);
-        let log_file = PathBuf::from(self.home_dir.clone()).join(format!("{}.log", device));
+        let log_file = PathBuf::from(self.home_dir.clone()).join(format!("{}.log", device_obj));
         self.n_devices += 1;
+        let device_mtx = Arc::new(Mutex::new(device_obj));
+        let device_mtx_thread_local = device_mtx.clone();
+        self.devices.push(device_mtx.clone());
         let h = thread::Builder::new()
-            .name(format!("{}", device).to_string())
+            .name(format!("{}", device_name).to_string())
             .spawn(move || {
                 let spin_sleeper = spin_sleep::SpinSleeper::new(1000);
                 let mut handler = router.handler;
                 let mut scheduler = router.scheduler;
                 // read_time, valid message flag, word
                 let mut prev_word = (0, false, WRD_EMPTY);
+                // lock the device object - release only after thread shutdown:
+                let mut device = device_mtx_thread_local.lock().unwrap();
 
                 loop {
                     if !go.load(Ordering::Relaxed) || device.state == State::Off {
@@ -699,7 +718,7 @@ impl System {
                             // device.write_queue.clear();
                         }
 
-                        let word_load_time = 0; //20; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
+                        let word_load_time = 0; //20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
                         let res = device.read();
                         if !res.is_err() {
                             if prev_word.0 == 0 {
@@ -720,7 +739,7 @@ impl System {
                                 prev_word = (current, false, w);
                             }
                         }
-                        if prev_word.1 {
+                        if prev_word.1 && current >= prev_word.0 + word_load_time {
                             // message in the cache is valid & after word_time . processe the word.
                             let mut w = prev_word.2;
                             if w.sync() == 1 {
@@ -787,35 +806,25 @@ impl System {
                     }
                     if exit.load(Ordering::Relaxed) {
                         //exiting
-                        println!(
-                            "{} writing {} logs to {} ",
-                            device,
-                            device.logs.len(),
-                            log_file.to_str().unwrap()
-                        );
-                        let mut file = OpenOptions::new()
-                            .write(true)
-                            .append(true)
-                            .create(true)
-                            .open(log_file)
-                            .unwrap();
-                        let device_des = device.to_string();
-                        for l in device.logs {
-                            writeln!(
-                                file,
-                                "{} {}{:02}-{:02} {:^15} {} {:^16} avg_d_t:{}",
-                                l.0,
-                                l.1,
-                                l.2,
-                                l.3,
-                                l.4.to_string(),
-                                l.5,
-                                l.6.value(),
-                                l.7
-                            )
-                            .unwrap();
+                        if CONFIG_SAVE_DEVICE_LOGS {
+                            println!(
+                                "{} writing {} logs to {} ",
+                                device,
+                                device.logs.len(),
+                                log_file.to_str().unwrap()
+                            );
+                            let mut file = OpenOptions::new()
+                                .write(true)
+                                .append(true)
+                                .create(true)
+                                .open(log_file)
+                                .unwrap();
+                            let device_des = device.to_string();
+                            for l in &device.logs {
+                                writeln!(file, "{}", format_log(&l)).unwrap();
+                            }
+                            println!("{} Done flushing logs", device_des);
                         }
-                        println!("{} Done flushing logs", device_des);
                         break;
                     }
                 }
