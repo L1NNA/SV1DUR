@@ -1,6 +1,6 @@
 use crate::sys::{
-    DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Router, System,
-    Word, WRD_EMPTY, AttackType
+    AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
+    Router, System, Word, WRD_EMPTY,
 };
 
 #[derive(Clone, Debug)]
@@ -29,16 +29,20 @@ impl EventHandler for FakeStatusTrcmd {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         let destination = w.address();
         // if w.address() != self.address {} //This line won't work yet.  TODO: Get our address.
-        if self.target != 2u8.pow(5) - 1 { 
+        if self.target != 2u8.pow(5) - 1 {
             if destination == self.target && w.tr() == 1 && !self.target_found {
                 d.log(
                     WRD_EMPTY,
-                    ErrMsg::MsgAttk(format!("Attacker>> Target detected (RT{})", self.target).to_string()),
+                    ErrMsg::MsgAttk(
+                        format!("Attacker>> Target detected (RT{})", self.target).to_string(),
+                    ),
                 );
                 self.target_found = true;
                 d.log(
-                    WRD_EMPTY, 
-                    ErrMsg::MsgAttk(format!("Sending fake status word (after tr_cmd_word)").to_string()),
+                    WRD_EMPTY,
+                    ErrMsg::MsgAttk(
+                        format!("Sending fake status word (after tr_cmd_word)").to_string(),
+                    ),
                 );
                 self.fake_status(d);
             }
@@ -71,7 +75,8 @@ pub fn test_attack7() {
                 total_device: n_devices - 1,
                 target: 0,
                 data: vec![1, 2, 3],
-                proto: 0,
+                proto: Proto::BC2RT,
+                proto_rotate: true,
             },
             // control device-level response
             handler: DefaultEventHandler {},
@@ -89,7 +94,8 @@ pub fn test_attack7() {
             total_device: n_devices - 1,
             target: 0,
             data: vec![1, 2, 3],
-            proto: 0,
+            proto: Proto::BC2RT,
+            proto_rotate: true,
         },
         // control device-level response
         handler: FakeStatusTrcmd {
@@ -100,7 +106,12 @@ pub fn test_attack7() {
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, AttackType::AtkFakeStatusTrcmd);
+    sys.run_d(
+        n_devices - 1,
+        Mode::RT,
+        attacker_router,
+        AttackType::AtkFakeStatusTrcmd,
+    );
     sys.go();
     sys.sleep_ms(10);
     sys.stop();

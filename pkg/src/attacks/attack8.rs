@@ -1,6 +1,6 @@
 use crate::sys::{
-    DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Router, System,
-    Word, WRD_EMPTY, AttackType
+    AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
+    Router, System, Word, WRD_EMPTY,
 };
 
 #[derive(Clone, Debug)]
@@ -17,7 +17,9 @@ impl DesynchronizationAttackOnRT {
     fn desynchronize_rt(&mut self, d: &mut Device) {
         d.log(
             WRD_EMPTY,
-            ErrMsg::MsgAttk(format!("Attacker>> Desynchronizing RT{} ...", self.target).to_string()),
+            ErrMsg::MsgAttk(
+                format!("Attacker>> Desynchronizing RT{} ...", self.target).to_string(),
+            ),
         );
         let tr = 0;
         let word_count = 17;
@@ -37,7 +39,8 @@ impl EventHandler for DesynchronizationAttackOnRT {
         // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
         let destination = w.address();
         self.word_count = w.dword_count();
-        if destination == self.target && self.target_found==false { // do we need the sub address?
+        if destination == self.target && self.target_found == false {
+            // do we need the sub address?
             if self.flag == 0 {
                 let new_flag;
                 if w.tr() == 1 {
@@ -53,8 +56,10 @@ impl EventHandler for DesynchronizationAttackOnRT {
             }
             self.target_found = true;
             d.log(
-                *w, 
-                ErrMsg::MsgAttk(format!("Attacker>> Target detected(RT{})", self.target).to_string()),
+                *w,
+                ErrMsg::MsgAttk(
+                    format!("Attacker>> Target detected(RT{})", self.target).to_string(),
+                ),
             );
         }
         self.default_on_cmd(d, w);
@@ -78,7 +83,6 @@ impl EventHandler for DesynchronizationAttackOnRT {
                 // sleep(3);
                 self.desynchronize_rt(d);
             } else if self.flag == 2 {
-
             }
         }
     }
@@ -100,7 +104,8 @@ pub fn test_attack8() {
                 total_device: n_devices - 1,
                 target: 0,
                 data: vec![1, 2, 3],
-                proto: 0,
+                proto: Proto::BC2RT,
+                proto_rotate: true,
             },
             // control device-level response
             handler: DefaultEventHandler {},
@@ -118,7 +123,8 @@ pub fn test_attack8() {
             total_device: n_devices - 1,
             target: 0,
             data: vec![1, 2, 3],
-            proto: 0,
+            proto: Proto::BC2RT,
+            proto_rotate: true,
         },
         // control device-level response
         handler: DesynchronizationAttackOnRT {
@@ -131,7 +137,12 @@ pub fn test_attack8() {
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, AttackType::AtkDesynchronizationAttackOnRT);
+    sys.run_d(
+        n_devices - 1,
+        Mode::RT,
+        attacker_router,
+        AttackType::AtkDesynchronizationAttackOnRT,
+    );
     sys.go();
     sys.sleep_ms(10);
     sys.stop();
