@@ -1,6 +1,6 @@
 use crate::sys::{
-    DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Router, System,
-    Word, WRD_EMPTY, AttackType
+    AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
+    Router, System, Word, WRD_EMPTY,
 };
 
 #[derive(Clone, Debug)]
@@ -14,8 +14,8 @@ pub struct CommandInvalidationAttack {
 impl CommandInvalidationAttack {
     pub fn inject(&mut self, d: &mut Device) {
         self.attack_times.push(d.clock.elapsed().as_nanos());
-        let dword_count = 31;    // Maximum number of words.  This will mean the receipient ignores the next 31 messages
-        let tr = 0;              // 1: transmit, 0: receive.  We want to receive because it will sit and wait rather than responding to the BC.
+        let dword_count = 31; // Maximum number of words.  This will mean the receipient ignores the next 31 messages
+        let tr = 0; // 1: transmit, 0: receive.  We want to receive because it will sit and wait rather than responding to the BC.
         let w = Word::new_cmd(self.target, dword_count, tr);
         d.log(
             WRD_EMPTY,
@@ -31,10 +31,12 @@ impl EventHandler for CommandInvalidationAttack {
         // This function replaces "find_RT_tcmd" from Michael's code
         // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
         let destination = w.address();
-        if destination == self.target && self.target_found==false && w.tr() == 1 {
+        if destination == self.target && self.target_found == false && w.tr() == 1 {
             d.log(
-                *w, 
-                ErrMsg::MsgAttk(format!("Attacker>> Target detected(RT{})", self.target).to_string()),
+                *w,
+                ErrMsg::MsgAttk(
+                    format!("Attacker>> Target detected(RT{})", self.target).to_string(),
+                ),
             );
             self.target_found = true;
             self.inject(d);
@@ -59,7 +61,8 @@ pub fn test_attack10() {
                 total_device: n_devices - 1,
                 target: 0,
                 data: vec![1, 2, 3],
-                proto: 0,
+                proto: Proto::BC2RT,
+                proto_rotate: true,
             },
             // control device-level response
             handler: DefaultEventHandler {},
@@ -77,7 +80,8 @@ pub fn test_attack10() {
             total_device: n_devices - 1,
             target: 0,
             data: vec![1, 2, 3],
-            proto: 0,
+            proto: Proto::BC2RT,
+            proto_rotate: true,
         },
         // control device-level response
         handler: CommandInvalidationAttack {
@@ -88,7 +92,12 @@ pub fn test_attack10() {
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, AttackType::AtkCommandInvalidationAttack);
+    sys.run_d(
+        n_devices - 1,
+        Mode::RT,
+        attacker_router,
+        AttackType::AtkCommandInvalidationAttack,
+    );
     sys.go();
     sys.sleep_ms(10);
     sys.stop();

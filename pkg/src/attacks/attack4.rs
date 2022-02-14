@@ -1,6 +1,6 @@
 use crate::sys::{
-    DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Router, System,
-    Word, WRD_EMPTY, State, AttackType
+    AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
+    Router, State, System, Word, WRD_EMPTY,
 };
 
 #[derive(Clone, Debug)]
@@ -19,7 +19,7 @@ pub struct MITMAttackOnRTs {
 impl MITMAttackOnRTs {
     fn start_mitm(&mut self, d: &mut Device) {
         d.log(
-            WRD_EMPTY, 
+            WRD_EMPTY,
             ErrMsg::MsgAttk(format!("Starting MITM attack...").to_string()),
         );
         self.attack_times.push(d.clock.elapsed().as_nanos());
@@ -48,15 +48,21 @@ impl EventHandler for MITMAttackOnRTs {
                     self.injected_words = w.dword_count();
                 }
                 d.log(
-                    WRD_EMPTY, 
-                    ErrMsg::MsgAttk(format!("Atttacker>> Target dst identified (RT{})", self.target_dst).to_string()),
+                    WRD_EMPTY,
+                    ErrMsg::MsgAttk(
+                        format!("Atttacker>> Target dst identified (RT{})", self.target_dst)
+                            .to_string(),
+                    ),
                 );
             } else if w.tr() == 1 && !self.target_src_found && w.address() != 31 {
                 self.target_src = w.address();
                 self.target_src_found = true;
                 d.log(
-                    WRD_EMPTY, 
-                    ErrMsg::MsgAttk(format!("Atttacker>> Target src identified (RT{})", self.target_src).to_string()),
+                    WRD_EMPTY,
+                    ErrMsg::MsgAttk(
+                        format!("Atttacker>> Target src identified (RT{})", self.target_src)
+                            .to_string(),
+                    ),
                 );
             }
         }
@@ -72,8 +78,10 @@ impl EventHandler for MITMAttackOnRTs {
             }
         } else if self.target_src == w.address() && self.done {
             d.log(
-                WRD_EMPTY, 
-                ErrMsg::MsgAttk(format!("Attacker>> Man in the Middle Successfully Completed!")),
+                WRD_EMPTY,
+                ErrMsg::MsgAttk(format!(
+                    "Attacker>> Man in the Middle Successfully Completed!"
+                )),
             );
             self.success = true;
             self.target_src_found = false;
@@ -99,7 +107,8 @@ pub fn test_attack4() {
                 total_device: n_devices - 1,
                 target: 0,
                 data: vec![1, 2, 3],
-                proto: 0,
+                proto: Proto::BC2RT,
+                proto_rotate: true,
             },
             // control device-level response
             handler: DefaultEventHandler {},
@@ -117,7 +126,8 @@ pub fn test_attack4() {
             total_device: n_devices - 1,
             target: 0,
             data: vec![1, 2, 3],
-            proto: 0,
+            proto: Proto::BC2RT,
+            proto_rotate: true,
         },
         // control device-level response
         handler: MITMAttackOnRTs {
@@ -133,7 +143,12 @@ pub fn test_attack4() {
         },
     };
 
-    sys.run_d(n_devices - 1, Mode::RT, attacker_router, AttackType::AtkMITMAttackOnRTs);
+    sys.run_d(
+        n_devices - 1,
+        Mode::RT,
+        attacker_router,
+        AttackType::AtkMITMAttackOnRTs,
+    );
     sys.go();
     sys.sleep_ms(10);
     sys.stop();
