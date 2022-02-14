@@ -78,12 +78,13 @@ fn test_herc_scheduler() {
         delta_t_count: 0,
     };
     let mut scheduler = HercScheduler::new();
-    for _ in 0..20 {
-        scheduler.on_bc_ready(&mut bc);
+    let mut output: String = String::new();
+    for _ in 0..200 {
+        if let Some(new_str) = scheduler.on_bc_ready(&mut bc){
+            output = format!("{}{}", output, new_str);
+        }
     }
-    // build herc scheduler
-    // run scheduler for about 1 second
-    // see how many times each element was acted on
+    println!("{}", output);
 }
 
 fn main() {

@@ -163,7 +163,7 @@ impl MsgPri {
 }
 
 pub struct HercScheduler { // Herc for Hercules which is a CC-130
-    priority_list: DoublePriorityQueue<(Address, Address), u128>, // instantiate with <(Address, Address)>
+    pub priority_list: DoublePriorityQueue<(Address, Address), u128>, // instantiate with <(Address, Address)>
     #[allow(unused)]
     timeout: u128,
 }
@@ -183,66 +183,62 @@ impl HercScheduler {
         return scheduler;
     }
 
-    pub fn on_bc_ready(&mut self, d: &mut Device) {
+    pub fn on_bc_ready(&mut self, d: &mut Device) -> Option<String> {
         // The current setup does not allow for a message to be prepended to the list.
         // We pop the next message and wait until we should send it.  
         // If a message is prepended it will be sent immediately after the first one is delivered.
-        let spin_sleeper = spin_sleep::SpinSleeper::new(1000);
+        let spin_sleeper = spin_sleep::SpinSleeper::new(1_000_000);
         let message = self.priority_list.pop_min();
         match message {
             Some(((src, dst), mut time)) => { 
                 let wc = src.word_count(&dst);
                 time = if time > self.timeout {time} else {self.timeout};
-                if time > d.clock.elapsed().as_nanos() {
+                let mut current = d.clock.elapsed().as_nanos();
+                if time > current {
                     //TODO account for possible overflow if we're very close to execution time.
-                    let wait = time - d.clock.elapsed().as_nanos();
+                    let wait = time - current;
                     spin_sleeper.sleep_ns(wait.try_into().unwrap());
+                    current = d.clock.elapsed().as_nanos();
                 }
-                let current = d.clock.elapsed().as_nanos();
                 match (src, dst) {
                     (source, _) if source as u8 == d.address => {// BC to RT
                         if src.repeat_function(&dst) {
                             self.update_priority((src, dst), time);
                         }
-                        // d.act_bc2rt(dst as u8, wc); // Can't be wordcount, must be data
-                        println!("[{current:0>10?}] from {src:?} to {dst:?} with {src:?} as BC");
+                        // d.act_bc2rt(dst as u8, wc); // Can't be wordcount, must be data.  We don't know what data we want to send, that's the Device itself.
                         let bus_available = current + (2+wc as u128) * 20_000;
-                        println!("[{:0>10?}] - message finished", bus_available);
                         self.timeout = bus_available;
+                        Some(format!("[{:0>6?}] from {src:?} to {dst:?} with {src:?} as BC\n[{:0>6?}] - message finished\n", current/1000, bus_available/1000))
                     }
                     (_, destination) if destination as u8 == d.address => {// RT to BC
                         if src.repeat_function(&dst) {
                             self.update_priority((src, dst), time);
                         }
                         d.act_rt2bc(src as u8, wc);
-                        println!("[{current:0>10?}] from {src:?} to {dst:?} with {dst:?} as BC");
                         let bus_available = current + (2+wc as u128) * 20_000;
-                        println!("[{:0>10?}] - message finished", bus_available);
                         self.timeout = bus_available;
+                        Some(format!("[{:0>6?}] from {src:?} to {dst:?} with {dst:?} as BC\n[{:0>6?}] - message finished\n", current/1000, bus_available/1000))
                     }
                     _ => {// RT to RT
                         if src.repeat_function(&dst) {
                             self.update_priority((src, dst), time);
                         }
                         d.act_rt2rt(src as u8, dst as u8, wc);
-                        println!("[{current:0>10?}] from {src:?} to {dst:?}");
                         let bus_available = current + (4+wc as u128) * 20_000;
-                        println!("[{:0>10?}] - message finished", bus_available);
                         self.timeout = bus_available;
+                        Some(format!("[{:0>6?}] from {src:?} to {dst:?}\n[{:0>6?}] - message finished\n", current/1000, bus_available/1000))
                     }
                 }
             }
-            None => {}
+            None => {None}
         }
         // self.timeout = bus_available; // d.clock.elapsed().as_nanos() + 20_000 + 16_000; // 20us for word transmission and 16us for timeout between messages
     }
 
-    pub fn update_priority(&mut self, pairing: (Address, Address), time: u128) {
-        let (src, dst) = pairing;
+    pub fn update_priority(&mut self, (src, dst): (Address, Address), time: u128) {
         let delay = src.priority(&dst).delay() as u128;
         let next_time = time + delay;
-        // println!("Appended {pairing:?} at time: {next_time:?} - {time}+{delay}");
-        self.priority_list.push(pairing, next_time);
+        self.priority_list.push((src, dst), next_time);
     }
 }
 
