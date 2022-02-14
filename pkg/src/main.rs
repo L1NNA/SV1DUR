@@ -7,7 +7,7 @@ use attacks::{
 };
 use crossbeam_channel::{bounded};
 #[allow(unused_imports)]
-use sys::{test_default, AttackType, Mode, State};
+use sys::{AttackType, Mode, State};
 use std::time::{Instant};
 mod bus_controller; //::{Address, MsgPri, HercScheduler};
 #[allow(unused_imports)]
