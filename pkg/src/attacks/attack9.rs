@@ -146,7 +146,7 @@ fn eval_attack9(w_delays: u128, proto: Proto) -> bool {
         AttackType::AtkDataCorruptionAttack,
     );
     sys.go();
-    sys.sleep_ms(10);
+    sys.sleep_ms(1000);
     sys.stop();
     let (devices, logs) = sys.join();
     let l_router = Arc::clone(&attacker_router);
