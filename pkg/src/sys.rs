@@ -599,6 +599,8 @@ impl System {
             for h in handles {
                 let _ = h.join();
             }
+        } else {
+            panic!("tried to join but no threads exist");
         }
 
         println!("Merging logs...");
@@ -838,6 +840,8 @@ impl System {
             .expect("failed to spawn thread");
         if let Some(handlers) = &mut self.handlers {
             handlers.push(h);
+        } else {
+            panic!("tried to push but no threads exist");
         }
     }
 }
