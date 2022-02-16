@@ -2,6 +2,7 @@ use crate::sys::{
     AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
     Router, System, Word, WRD_EMPTY,
 };
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
 pub struct CommandInvalidationAttack {
@@ -69,9 +70,19 @@ pub fn test_attack10() {
         };
 
         if m == 0 {
-            sys.run_d(m as u8, Mode::BC, default_router, AttackType::Benign);
+            sys.run_d(
+                m as u8,
+                Mode::BC,
+                Arc::new(Mutex::new(default_router)),
+                AttackType::Benign,
+            );
         } else {
-            sys.run_d(m as u8, Mode::RT, default_router, AttackType::Benign);
+            sys.run_d(
+                m as u8,
+                Mode::RT,
+                Arc::new(Mutex::new(default_router)),
+                AttackType::Benign,
+            );
         }
     }
     let attacker_router = Router {
@@ -95,7 +106,7 @@ pub fn test_attack10() {
     sys.run_d(
         n_devices - 1,
         Mode::RT,
-        attacker_router,
+        Arc::new(Mutex::new(attacker_router)),
         AttackType::AtkCommandInvalidationAttack,
     );
     sys.go();

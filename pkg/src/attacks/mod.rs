@@ -12,5 +12,5 @@ pub mod attack9;
 pub use {
     attack1::test_attack1, attack10::test_attack10, attack2::test_attack2, attack3::test_attack3,
     attack4::test_attack4, attack5::test_attack5, attack6::test_attack6, attack7::test_attack7,
-    attack8::test_attack8, attack9::test_attack9,
+    attack8::test_attack8
 };
