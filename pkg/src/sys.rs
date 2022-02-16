@@ -545,7 +545,7 @@ pub struct System {
     pub clock: Instant,
     pub go: Arc<AtomicBool>,
     pub exit: Arc<AtomicBool>,
-    pub handlers: Vec<Option<thread::JoinHandle<u32>>>,
+    pub handlers: Option<Vec<thread::JoinHandle<u32>>>,
     pub devices: Vec<Arc<Mutex<Device>>>,
     pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
     pub home_dir: String,
@@ -568,7 +568,7 @@ impl System {
             clock: clock,
             go: Arc::new(AtomicBool::new(false)),
             exit: Arc::new(AtomicBool::new(false)),
-            handlers: Vec::new(),
+            handlers: Some(Vec::new()),
             home_dir: home_dir,
             write_delays: write_delays,
             devices: Vec::new(),
@@ -594,12 +594,13 @@ impl System {
     pub fn stop(&mut self) {
         self.exit.store(true, Ordering::Relaxed);
     }
-    pub fn join(mut self) -> Vec<Arc<Mutex<Device>>> {
-        for oh in self.handlers {
-            if let Some(h) = oh {
+    pub fn join(&mut self) -> Vec<Arc<Mutex<Device>>> {
+        if let Some(handles) = self.handlers.take() {
+            for h in handles {
                 let _ = h.join();
             }
         }
+
         println!("Merging logs...");
         for device_mx in &self.devices {
             let device = device_mx.lock().unwrap();
@@ -615,7 +616,7 @@ impl System {
                 .create(true)
                 .open(log_file)
                 .unwrap();
-            for l in self.logs {
+            for l in &self.logs {
                 let _ = writeln!(file, "{}", format_log(&l));
             }
         }
@@ -835,7 +836,9 @@ impl System {
                 return 0;
             })
             .expect("failed to spawn thread");
-        self.handlers.push(Some(h));
+        if let Some(handlers) = &mut self.handlers {
+            handlers.push(h);
+        }
     }
 }
 
