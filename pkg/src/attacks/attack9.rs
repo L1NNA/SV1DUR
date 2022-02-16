@@ -166,7 +166,7 @@ mod tests {
     fn test_attk_9_r2r_succeed() {
         // 12_000 based on the protocol but there is a probability
         // of success. so here we made it higher
-        assert!(eval_attack9(20_000, Proto::RT2RT) == true);
+        assert!(eval_attack9(40_000, Proto::RT2RT) == true);
     }
     #[test]
     fn test_attk_9_r2r_failed() {
@@ -174,7 +174,7 @@ mod tests {
     }
     #[test]
     fn test_attk_9_r2b_succeed() {
-        assert!(eval_attack9(20_000, Proto::RT2BC) == true);
+        assert!(eval_attack9(40_000, Proto::RT2BC) == true);
     }
     #[test]
     fn test_attk_9_r2b_failed() {
