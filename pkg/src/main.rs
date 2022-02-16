@@ -3,7 +3,7 @@ mod sys;
 #[allow(unused_imports)]
 use sys::{eval_sys, Proto};
 fn main() {
-    let devices = eval_sys(0, 3, Proto::RT2RT, true).0;
+    eval_sys(0, 3, Proto::RT2RT, true);
     // test_attack0();
     // test_attack1();
     // test_attack2();

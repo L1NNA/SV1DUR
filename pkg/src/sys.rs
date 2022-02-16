@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 pub const WRD_EMPTY: Word = Word { 0: 0 };
 pub const ATK_DEFAULT_DELAYS: u128 = 4000;
 pub const CONFIG_PRINT_LOGS: bool = false;
-pub const CONFIG_SAVE_DEVICE_LOGS: bool = true;
-pub const CONFIG_SAVE_SYS_LOGS: bool = true;
+pub const CONFIG_SAVE_DEVICE_LOGS: bool = false;
+pub const CONFIG_SAVE_SYS_LOGS: bool = false;
 
 #[allow(unused)]
 #[derive(Clone, Debug, PartialEq)]
@@ -553,7 +553,7 @@ pub struct System {
     pub clock: Instant,
     pub go: Arc<AtomicBool>,
     pub exit: Arc<AtomicBool>,
-    pub handlers: Vec<thread::JoinHandle<u32>>,
+    pub handlers: Option<Vec<thread::JoinHandle<u32>>>,
     pub devices: Vec<Arc<Mutex<Device>>>,
     pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
     pub home_dir: String,
@@ -576,7 +576,7 @@ impl System {
             clock: clock,
             go: Arc::new(AtomicBool::new(false)),
             exit: Arc::new(AtomicBool::new(false)),
-            handlers: Vec::new(),
+            handlers: Some(Vec::new()),
             home_dir: home_dir,
             write_delays: write_delays,
             devices: Vec::new(),
@@ -602,15 +602,15 @@ impl System {
     pub fn stop(&mut self) {
         self.exit.store(true, Ordering::Relaxed);
     }
-    pub fn join(
-        mut self,
-    ) -> (
-        Vec<Arc<Mutex<Device>>>,
-        Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
-    ) {
-        (self.handlers).into_iter().for_each(|h| {
-            let _ = h.join();
-        });
+    pub fn join(&mut self) {
+        if let Some(handles) = self.handlers.take() {
+            for h in handles {
+                let _ = h.join();
+            }
+        } else {
+            panic!("tried to join but no threads exist");
+        }
+
         println!("Merging logs...");
         for device_mx in &self.devices {
             let device = device_mx.lock().unwrap();
@@ -618,7 +618,6 @@ impl System {
         }
 
         self.logs.sort_by_key(|k| k.0);
-        let mut sorted_logs = Vec::new();
         if CONFIG_SAVE_SYS_LOGS {
             let log_file = PathBuf::from(self.home_dir.clone()).join("sys.log");
             let mut file = OpenOptions::new()
@@ -627,12 +626,10 @@ impl System {
                 .create(true)
                 .open(log_file)
                 .unwrap();
-            for l in self.logs.into_iter() {
-                sorted_logs.push(l.clone());
+            for l in &self.logs {
                 let _ = writeln!(file, "{}", format_log(&l));
             }
         }
-        return (self.devices.clone(), sorted_logs);
     }
     pub fn sleep_ms(&mut self, ms: u64) {
         thread::sleep(Duration::from_millis(ms));
@@ -852,7 +849,11 @@ impl System {
                 return 0;
             })
             .expect("failed to spawn thread");
-        self.handlers.push(h);
+        if let Some(handlers) = &mut self.handlers {
+            handlers.push(h);
+        } else {
+            panic!("tried to push but no threads exist");
+        }
     }
 }
 
@@ -931,15 +932,7 @@ pub enum AttackType {
     AtkCommandInvalidationAttack = 10,
 }
 
-pub fn eval_sys(
-    w_delays: u128,
-    n_devices: u8,
-    proto: Proto,
-    proto_rotate: bool,
-) -> (
-    Vec<Arc<Mutex<Device>>>,
-    Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
-) {
+pub fn eval_sys(w_delays: u128, n_devices: u8, proto: Proto, proto_rotate: bool) -> System {
     // let n_devices = 3;
     // let w_delays = w_delays;
     let mut sys = System::new(n_devices as u32, w_delays);
@@ -977,7 +970,8 @@ pub fn eval_sys(
     sys.go();
     sys.sleep_ms(100);
     sys.stop();
-    return sys.join();
+    sys.join();
+    return sys;
 }
 
 #[cfg(test)]
@@ -987,8 +981,8 @@ mod tests {
 
     #[test]
     fn test_delta_t() {
-        let devices = eval_sys(40000, 3, Proto::RT2RT, true).0;
-        let bc_mx = devices[0].clone();
+        let system = eval_sys(40000, 3, Proto::RT2RT, true);
+        let bc_mx = system.devices[0].clone();
         let bc = bc_mx.lock().unwrap();
         // smoke test
         println!("{}", bc.delta_t_avg / bc.delta_t_count);

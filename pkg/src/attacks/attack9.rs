@@ -72,7 +72,6 @@ impl EventHandler for DataCorruptionAttack {
         let destination = w.address();
         if destination == self.target && self.target_found == false && w.tr() == 1 {
             self.word_count = w.dword_count();
-            println!("!!! {}", self.word_count);
             // do we need the sub address?
             d.log(
                 *w,
@@ -148,9 +147,9 @@ fn eval_attack9(w_delays: u128, proto: Proto) -> bool {
     sys.go();
     sys.sleep_ms(1000);
     sys.stop();
-    let (devices, logs) = sys.join();
+    sys.join();
     let l_router = Arc::clone(&attacker_router);
-    return l_router.lock().unwrap().handler.verify(&devices, &logs);
+    return l_router.lock().unwrap().handler.verify(&sys.devices, &sys.logs);
     // let l_attk = l_router.unwrap().handler;
     // .lock().unwrap();
     // return l_router.unwrap().handler.verify(&devices, &logs);
