@@ -15,7 +15,7 @@ pub const WRD_EMPTY: Word = Word { 0: 0 };
 pub const ATK_DEFAULT_DELAYS: u128 = 4000;
 pub const CONFIG_PRINT_LOGS: bool = false;
 pub const CONFIG_SAVE_DEVICE_LOGS: bool = false;
-pub const CONFIG_SAVE_SYS_LOGS: bool = false;
+pub const CONFIG_SAVE_SYS_LOGS: bool = true;
 
 #[allow(unused)]
 #[derive(Clone, Debug, PartialEq)]
