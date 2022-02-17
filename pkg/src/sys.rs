@@ -15,7 +15,7 @@ pub const WRD_EMPTY: Word = Word { 0: 0 };
 pub const ATK_DEFAULT_DELAYS: u128 = 4000;
 pub const CONFIG_PRINT_LOGS: bool = false;
 pub const CONFIG_SAVE_DEVICE_LOGS: bool = false;
-pub const CONFIG_SAVE_SYS_LOGS: bool = true;
+pub const CONFIG_SAVE_SYS_LOGS: bool = false;
 
 #[allow(unused)]
 #[derive(Clone, Debug, PartialEq)]
@@ -566,7 +566,9 @@ impl System {
         let home_dir = Utc::now().format("%F-%H-%M-%S-%f").to_string();
 
         // i don't understand... why I have to clone..
-        let _ = create_dir(PathBuf::from(home_dir.clone()));
+        if CONFIG_SAVE_DEVICE_LOGS || CONFIG_SAVE_SYS_LOGS {
+            let _ = create_dir(PathBuf::from(home_dir.clone()));
+        }
 
         let mut sys = System {
             n_devices: 0,
@@ -611,7 +613,7 @@ impl System {
             panic!("tried to join but no threads exist");
         }
 
-        println!("Merging logs...");
+        // println!("Merging logs...");
         for device_mx in &self.devices {
             let device = device_mx.lock().unwrap();
             device.log_merge(&mut self.logs);

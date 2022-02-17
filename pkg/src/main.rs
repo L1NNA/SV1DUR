@@ -1,9 +1,13 @@
 mod attacks;
+mod risk;
 mod sys;
+use risk::eval_all;
 #[allow(unused_imports)]
 use sys::{eval_sys, Proto};
+
 fn main() {
-    eval_sys(0, 3, Proto::RT2RT, true);
+    eval_all();
+    // eval_sys(0, 3, Proto::RT2RT, true);
     // test_attack0();
     // test_attack1();
     // test_attack2();

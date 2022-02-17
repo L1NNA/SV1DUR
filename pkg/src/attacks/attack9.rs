@@ -54,7 +54,7 @@ impl DataCorruptionAttack {
             if l.6 == ErrMsg::MsgEntDat
                 && l.5.attk() == (AttackType::AtkDataCorruptionAttack as u32)
             {
-                println!("{} {}/{}", format_log(&l), recieved_faked, self.word_count);
+                // println!("{} {}/{}", format_log(&l), recieved_faked, self.word_count);
                 recieved_faked += 1;
                 if recieved_faked == self.word_count {
                     return true;
@@ -86,7 +86,7 @@ impl EventHandler for DataCorruptionAttack {
     }
 }
 
-fn eval_attack9(w_delays: u128, proto: Proto) -> bool {
+pub fn eval_attack9(w_delays: u128, proto: Proto) -> bool {
     // let mut delays_single = Vec::new();
     let n_devices = 4;
     // normal device has 4ns delays (while attacker has zero)
@@ -145,7 +145,7 @@ fn eval_attack9(w_delays: u128, proto: Proto) -> bool {
         AttackType::AtkDataCorruptionAttack,
     );
     sys.go();
-    sys.sleep_ms(1000);
+    sys.sleep_ms(100);
     sys.stop();
     sys.join();
     let l_router = Arc::clone(&attacker_router);
