@@ -1,6 +1,6 @@
 use crate::sys::{
     AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
-    Router, System, Word, WRD_EMPTY,
+    Router, System, Word, WRD_EMPTY, TR
 };
 use std::sync::{Arc, Mutex};
 
@@ -32,7 +32,7 @@ impl EventHandler for CommandInvalidationAttack {
         // This function replaces "find_RT_tcmd" from Michael's code
         // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
         let destination = w.address();
-        if destination == self.target && self.target_found == false && w.tr() == 1 {
+        if destination == self.target && self.target_found == false && w.tr() == TR::Transmit {
             d.log(
                 *w,
                 ErrMsg::MsgAttk(

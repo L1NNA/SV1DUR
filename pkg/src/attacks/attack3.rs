@@ -1,6 +1,6 @@
 use crate::sys::{
     AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
-    Router, System, Word, WRD_EMPTY,
+    Router, System, Word, WRD_EMPTY, TR
 };
 use std::sync::{Arc, Mutex};
 
@@ -27,7 +27,7 @@ impl DataThrashingAgainstRT {
 impl EventHandler for DataThrashingAgainstRT {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         // This replaces 'jam_cmdwords' from Michael's code
-        if w.address() == self.target && w.tr() == 0 {
+        if w.address() == self.target && w.tr() == TR::Receive {
             self.target_found = true;
             self.word_count = w.dword_count();
             d.log(

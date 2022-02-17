@@ -1,6 +1,6 @@
 use crate::sys::{
     AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
-    Router, System, Word, WRD_EMPTY,
+    Router, System, Word, WRD_EMPTY, TR
 };
 use std::sync::{Arc, Mutex};
 
@@ -44,7 +44,7 @@ impl EventHandler for DesynchronizationAttackOnRT {
             // do we need the sub address?
             if self.flag == 0 {
                 let new_flag;
-                if w.tr() == 1 {
+                if w.tr() == TR::Transmit {
                     new_flag = 2;
                     self.word_count = w.dword_count();
                 } else {
@@ -52,7 +52,7 @@ impl EventHandler for DesynchronizationAttackOnRT {
                 }
                 self.flag = new_flag;
             }
-            if w.tr() == 0 {
+            if w.tr() == TR::Receive {
                 self.word_count = w.dword_count();
             }
             self.target_found = true;
