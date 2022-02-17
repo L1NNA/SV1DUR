@@ -146,10 +146,10 @@ impl Word {
         return w;
     }
 
-    pub fn new_cmd(addr: u8, dword_count: u8, tr: u8) -> Word {
+    pub fn new_cmd(addr: u8, dword_count: u8, tr: TR) -> Word {
         let mut w = Word { 0: 0 };
         w.set_sync(1);
-        w.set_tr(tr); // 1: transmit, 0: receive
+        w.set_tr(tr as u8); // 1: transmit, 0: receive
         w.set_address(addr); // the RT address which is five bits long
                              // address 11111 (31) is reserved for broadcast protocol
 
@@ -532,7 +532,7 @@ impl Device {
 
     pub fn act_bc2rt(&mut self, dest: u8, data: &Vec<u32>) {
         self.set_state(State::BusyTrx);
-        self.write(Word::new_cmd(dest, data.len() as u8, 0));
+        self.write(Word::new_cmd(dest, data.len() as u8, TR::Receive));
         for d in data {
             self.write(Word::new_data(*d));
         }
@@ -541,7 +541,7 @@ impl Device {
     }
     pub fn act_rt2bc(&mut self, src: u8, dword_count: u8) {
         self.set_state(State::BusyTrx);
-        self.write(Word::new_cmd(src, dword_count, 1));
+        self.write(Word::new_cmd(src, dword_count, TR::Transmit));
         // expecting to recieve dword_count number of words
         self.dword_count_expected = dword_count;
         self.set_state(State::AwtStsTrxR2B(src));
@@ -549,8 +549,8 @@ impl Device {
     }
     pub fn act_rt2rt(&mut self, src: u8, dst: u8, dword_count: u8) {
         self.set_state(State::BusyTrx);
-        self.write(Word::new_cmd(dst, dword_count, 0));
-        self.write(Word::new_cmd(src, dword_count, 1));
+        self.write(Word::new_cmd(dst, dword_count, TR::Receive));
+        self.write(Word::new_cmd(src, dword_count, TR::Transmit));
         // expecting to recieve dword_count number of words
         self.set_state(State::AwtStsTrxR2R(src, dst));
         self.delta_t_start = self.clock.elapsed().as_nanos();

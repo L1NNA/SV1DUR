@@ -16,7 +16,7 @@ impl CommandInvalidationAttack {
     pub fn inject(&mut self, d: &mut Device) {
         self.attack_times.push(d.clock.elapsed().as_nanos());
         let dword_count = 31; // Maximum number of words.  This will mean the receipient ignores the next 31 messages
-        let tr = 0; // 1: transmit, 0: receive.  We want to receive because it will sit and wait rather than responding to the BC.
+        let tr = TR::Receive; // We want to receive because it will sit and wait rather than responding to the BC.
         let w = Word::new_cmd(self.target, dword_count, tr);
         d.log(
             WRD_EMPTY,

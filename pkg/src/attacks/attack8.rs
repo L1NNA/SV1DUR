@@ -22,7 +22,7 @@ impl DesynchronizationAttackOnRT {
                 format!("Attacker>> Desynchronizing RT{} ...", self.target).to_string(),
             ),
         );
-        let tr = 0;
+        let tr = TR::Receive;
         let word_count = 17;
         self.attack_times.push(d.clock.elapsed().as_nanos());
         let w = Word::new_cmd(self.target, word_count, tr);

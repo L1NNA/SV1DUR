@@ -17,7 +17,7 @@ impl DataThrashingAgainstRT {
     fn inject_words(&mut self, d: &mut Device) {
         self.attack_times.push(d.clock.elapsed().as_nanos());
         let word_count = 30;
-        let tr = 0;
+        let tr = TR::Receive;
         let w = Word::new_cmd(self.target, word_count, tr);
         d.write(w);
         self.success = true;

@@ -26,7 +26,7 @@ impl MITMAttackOnRTs {
         self.attack_times.push(d.clock.elapsed().as_nanos());
         d.set_state(State::Off);
         let word_count = self.injected_words;
-        let tr = 0;
+        let tr = TR::Receive;
         let mut w = Word::new_cmd(self.target_src, word_count, tr);
         d.write(w);
         w.set_address(self.target_dst);
