@@ -1,6 +1,6 @@
 use crate::sys::{
     AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
-    Router, System, Word, WRD_EMPTY,
+    Router, System, Word, WRD_EMPTY, TR, BROADCAST_ADDRESS
 };
 use std::sync::{Arc, Mutex};
 
@@ -31,7 +31,7 @@ impl EventHandler for FakeStatusTrcmd {
         let destination = w.address();
         // if w.address() != self.address {} //This line won't work yet.  TODO: Get our address.
         if self.target != 2u8.pow(5) - 1 {
-            if destination == self.target && w.tr() == 1 && !self.target_found {
+            if destination == self.target && w.tr() == TR::Transmit && !self.target_found {
                 d.log(
                     WRD_EMPTY,
                     ErrMsg::MsgAttk(
@@ -48,7 +48,7 @@ impl EventHandler for FakeStatusTrcmd {
                 self.fake_status(d);
             }
         } else {
-            if w.tr() == 1 && destination != 31 {
+            if w.tr() == TR::Transmit && destination != BROADCAST_ADDRESS {
                 d.log(
                     WRD_EMPTY,
                     ErrMsg::MsgAttk(format!("Sending fake status word (after tr_cmd_word)")),

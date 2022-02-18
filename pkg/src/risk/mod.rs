@@ -24,8 +24,8 @@ Attack_05.py is a shutdown attack on RT, which is AV2.
 Attack_06.py is fake status command against receive command, which is AV7 (BC2RT).
 Attack_07.py is fake status command against transmit command, which is AV7 (RT2BC).
 Attack_08.py is desynchronization attack against an RT, which is AV2.
-Attack_09.py is data corruption attack, which is AV4 (RT2BC and RT2RT).
-Attack_10.py is a command invalidation attack, which is AV5 (RT2BC and RT2RT).
+* Attack_09.py is data corruption attack, which is AV4 (RT2BC and RT2RT).
+* Attack_10.py is a command invalidation attack, which is AV5 (RT2BC and RT2RT).
 
 */
 #[derive(Debug)]

@@ -1,6 +1,6 @@
 use crate::sys::{
     AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
-    EventHandler, Mode, Proto, Router, State, System, Word, WRD_EMPTY,
+    EventHandler, Mode, Proto, Router, State, System, Word, WRD_EMPTY, TR
 };
 use std::sync::{Arc, Mutex};
 
@@ -20,7 +20,7 @@ impl ShutdownAttackRT {
             ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", self.target).to_string()),
         );
         let mode_code = 4;
-        let tr = 0;
+        let tr = TR::Receive;
         self.attack_times.push(d.clock.elapsed().as_nanos());
         let mut w = Word::new_cmd(self.target, mode_code, tr);
         w.set_mode(1);

@@ -1,6 +1,6 @@
 use crate::sys::{
     AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
-    Router, State, System, Word, WRD_EMPTY,
+    Router, State, System, Word, WRD_EMPTY, TR, BROADCAST_ADDRESS
 };
 use std::sync::{Arc, Mutex};
 
@@ -26,7 +26,7 @@ impl MITMAttackOnRTs {
         self.attack_times.push(d.clock.elapsed().as_nanos());
         d.set_state(State::Off);
         let word_count = self.injected_words;
-        let tr = 0;
+        let tr = TR::Receive;
         let mut w = Word::new_cmd(self.target_src, word_count, tr);
         d.write(w);
         w.set_address(self.target_dst);
@@ -41,7 +41,7 @@ impl MITMAttackOnRTs {
 impl EventHandler for MITMAttackOnRTs {
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         if !(self.target_src_found && self.target_dst_found) && !self.done {
-            if w.tr() == 0 && !self.target_dst_found && w.address() != 31 {
+            if w.tr() == TR::Receive && !self.target_dst_found && w.address() != BROADCAST_ADDRESS {
                 self.target_dst = w.address();
                 self.target_dst_found = true;
                 self.word_count = w.dword_count();
@@ -55,7 +55,7 @@ impl EventHandler for MITMAttackOnRTs {
                             .to_string(),
                     ),
                 );
-            } else if w.tr() == 1 && !self.target_src_found && w.address() != 31 {
+            } else if w.tr() == TR::Transmit && !self.target_src_found && w.address() != BROADCAST_ADDRESS {
                 self.target_src = w.address();
                 self.target_src_found = true;
                 d.log(

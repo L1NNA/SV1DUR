@@ -15,7 +15,8 @@ pub const WRD_EMPTY: Word = Word { 0: 0 };
 pub const ATK_DEFAULT_DELAYS: u128 = 4000;
 pub const CONFIG_PRINT_LOGS: bool = false;
 pub const CONFIG_SAVE_DEVICE_LOGS: bool = false;
-pub const CONFIG_SAVE_SYS_LOGS: bool = true;
+pub const CONFIG_SAVE_SYS_LOGS: bool = false;
+pub const BROADCAST_ADDRESS: u8 = 31;
 
 #[allow(unused)]
 #[derive(Clone, Debug, PartialEq)]
@@ -37,23 +38,23 @@ pub enum ErrMsg {
 
 impl ErrMsg {
     fn value(&self) -> String {
+        use ErrMsg::*;
         match self {
-            ErrMsg::MsgEmpt => "".to_owned(),
-            ErrMsg::MsgWrt => "Wrt".to_owned(),
-            ErrMsg::MsgBCReady => "BC is ready".to_owned(),
-            ErrMsg::MsgStaChg => "Status Changed".to_owned(),
-            ErrMsg::MsgEntWrdRec => "Word Received".to_owned(),
-            ErrMsg::MsgEntErrPty => "Parity Error".to_owned(),
-            ErrMsg::MsgEntCmd => "CMD Received".to_owned(),
-            ErrMsg::MsgEntCmdRcv => "CMD RCV Received".to_owned(),
-            ErrMsg::MsgEntCmdTrx => "CMD TRX Received".to_owned(),
-            ErrMsg::MsgEntCmdMcx => "CMD MCX Received".to_owned(),
-            ErrMsg::MsgEntDat => "Data Received".to_owned(),
-            ErrMsg::MsgEntSte => "Status Received".to_owned(),
-            ErrMsg::MsgAttk(msg) => {
-                return msg.to_owned();
-            }
+            MsgEmpt => "",
+            MsgWrt => "Wrt",
+            MsgBCReady => "BC is ready",
+            MsgStaChg => "Status Changed",
+            MsgEntWrdRec => "Word Received",
+            MsgEntErrPty => "Parity Error",
+            MsgEntCmd => "CMD Received",
+            MsgEntCmdRcv => "CMD RCV Received",
+            MsgEntCmdTrx => "CMD TRX Received",
+            MsgEntCmdMcx => "CMD MCX Received",
+            MsgEntDat => "Data Received",
+            MsgEntSte => "Status Received",
+            MsgAttk(msg) => msg,
         }
+        .to_owned()
     }
 }
 
@@ -69,6 +70,23 @@ pub fn format_log(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> Strin
         l.6.value(),
         l.7
     );
+}
+
+#[derive(Clone, Debug, PartialEq)]
+#[repr(u8)]
+pub enum TR {
+    Receive = 0,
+    Transmit = 1,
+}
+
+impl From<u8> for TR {
+    fn from(value: u8) -> Self {
+        use TR::*;
+        match value {
+            0 => Receive,
+            _ => Transmit,
+        }
+    }
 }
 
 bitfield! {
@@ -90,7 +108,7 @@ bitfield! {
     pub terminal_flag_bit, set_terminal_flag_bit: 18, 18;
     pub parity_bit, set_parity_bit: 19, 19;
     // for command:
-    pub tr, set_tr: 8, 8;
+    pub into TR, tr, set_tr: 8, 8;
     // it was 13, 9 but since we use instrumentation bit
     // we have kept reduce the sub-address space to 15.
     pub sub_address, set_sub_address: 13, 10;
@@ -128,10 +146,10 @@ impl Word {
         return w;
     }
 
-    pub fn new_cmd(addr: u8, dword_count: u8, tr: u8) -> Word {
+    pub fn new_cmd(addr: u8, dword_count: u8, tr: TR) -> Word {
         let mut w = Word { 0: 0 };
         w.set_sync(1);
-        w.set_tr(tr); // 1: transmit, 0: receive
+        w.set_tr(tr as u8); // 1: transmit, 0: receive
         w.set_address(addr); // the RT address which is five bits long
                              // address 11111 (31) is reserved for broadcast protocol
 
@@ -239,7 +257,7 @@ pub trait EventHandler: Clone + Send {
         if d.mode == Mode::RT {
             let destination = w.address();
             // 31 is the boardcast address
-            if destination == d.address || destination == 31 {
+            if destination == d.address || destination == BROADCAST_ADDRESS {
                 // d.log(*w, ErrMsg::MsgEntCmd);
                 // println!("{} {} {}", w, w.tr(), w.mode());
                 d.number_of_current_cmd += 1;
@@ -248,11 +266,11 @@ pub trait EventHandler: Clone + Send {
                 if d.number_of_current_cmd >= 2 {
                     d.reset_all_stateful();
                 }
-                if w.tr() == 0 && (w.mode() == 1 || w.mode() == 0) {
+                if w.tr() == TR::Receive && (w.mode() == 1 || w.mode() == 0) {
                     // shutdown etc mode change command
                     self.on_cmd_mcx(d, w);
                 } else {
-                    if w.tr() == 0 {
+                    if w.tr() == TR::Receive {
                         // receive command
                         self.on_cmd_rcv(d, w);
                     } else {
@@ -263,7 +281,7 @@ pub trait EventHandler: Clone + Send {
                 }
             }
             // rt2rt sub destination
-            if w.tr() == 1 && w.sub_address() == d.address {
+            if w.tr() == TR::Transmit && w.sub_address() == d.address {
                 self.on_cmd_rcv(d, w);
             }
         }
@@ -286,7 +304,7 @@ pub trait EventHandler: Clone + Send {
         d.set_state(State::AwtData);
         d.dword_count = 0;
         d.dword_count_expected = w.dword_count();
-        if w.address() == 31 {
+        if w.address() == BROADCAST_ADDRESS {
             d.in_brdcst = true;
         }
     }
@@ -514,7 +532,7 @@ impl Device {
 
     pub fn act_bc2rt(&mut self, dest: u8, data: &Vec<u32>) {
         self.set_state(State::BusyTrx);
-        self.write(Word::new_cmd(dest, data.len() as u8, 0));
+        self.write(Word::new_cmd(dest, data.len() as u8, TR::Receive));
         for d in data {
             self.write(Word::new_data(*d));
         }
@@ -523,7 +541,7 @@ impl Device {
     }
     pub fn act_rt2bc(&mut self, src: u8, dword_count: u8) {
         self.set_state(State::BusyTrx);
-        self.write(Word::new_cmd(src, dword_count, 1));
+        self.write(Word::new_cmd(src, dword_count, TR::Transmit));
         // expecting to recieve dword_count number of words
         self.dword_count_expected = dword_count;
         self.set_state(State::AwtStsTrxR2B(src));
@@ -531,8 +549,8 @@ impl Device {
     }
     pub fn act_rt2rt(&mut self, src: u8, dst: u8, dword_count: u8) {
         self.set_state(State::BusyTrx);
-        self.write(Word::new_cmd(dst, dword_count, 0));
-        self.write(Word::new_cmd(src, dword_count, 1));
+        self.write(Word::new_cmd(dst, dword_count, TR::Receive));
+        self.write(Word::new_cmd(src, dword_count, TR::Transmit));
         // expecting to recieve dword_count number of words
         self.set_state(State::AwtStsTrxR2R(src, dst));
         self.delta_t_start = self.clock.elapsed().as_nanos();
@@ -565,9 +583,8 @@ impl System {
         let clock = Instant::now();
         let home_dir = Utc::now().format("%F-%H-%M-%S-%f").to_string();
 
-        // i don't understand... why I have to clone..
         if CONFIG_SAVE_DEVICE_LOGS || CONFIG_SAVE_SYS_LOGS {
-            let _ = create_dir(PathBuf::from(home_dir.clone()));
+            let _ = create_dir(PathBuf::from(&home_dir));
         }
 
         let mut sys = System {

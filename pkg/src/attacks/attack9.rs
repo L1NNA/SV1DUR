@@ -1,6 +1,6 @@
 use crate::sys::{
     format_log, AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
-    EventHandler, Mode, Proto, Router, State, System, Word, WRD_EMPTY,
+    EventHandler, Mode, Proto, Router, State, System, Word, WRD_EMPTY, TR
 };
 use std::sync::{Arc, Mutex};
 
@@ -65,7 +65,7 @@ impl EventHandler for DataCorruptionAttack {
         // This function replaces "find_RT_tcmd" from Michael's code
         // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
         let destination = w.address();
-        if destination == self.target && self.target_found == false && w.tr() == 1 {
+        if destination == self.target && self.target_found == false && w.tr() == TR::Transmit {
             self.word_count = w.dword_count();
             // do we need the sub address?
             d.log(
@@ -140,7 +140,7 @@ pub fn eval_attack9(w_delays: u128, proto: Proto) -> bool {
         AttackType::AtkDataCorruptionAttack,
     );
     sys.go();
-    sys.sleep_ms(100);
+    sys.sleep_ms(400);
     sys.stop();
     sys.join();
     let l_router = Arc::clone(&attacker_router);
