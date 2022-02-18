@@ -15,16 +15,18 @@ pub const WRD_EMPTY: Word = Word { 0: 0 };
 pub const ATK_DEFAULT_DELAYS: u128 = 4000;
 pub const CONFIG_PRINT_LOGS: bool = false;
 pub const CONFIG_SAVE_DEVICE_LOGS: bool = false;
-pub const CONFIG_SAVE_SYS_LOGS: bool = true;
+pub const CONFIG_SAVE_SYS_LOGS: bool = false;
 pub const BROADCAST_ADDRESS: u8 = 31;
 
 #[allow(unused)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum ErrMsg {
     MsgEmpt,
-    MsgWrt,
+    // show write queue size
+    MsgWrt(usize),
     MsgBCReady,
-    MsgStaChg,
+    // show write queue size
+    MsgStaChg(usize),
     MsgEntWrdRec,
     MsgEntErrPty,
     MsgEntCmd,
@@ -33,33 +35,40 @@ pub enum ErrMsg {
     MsgEntCmdMcx,
     MsgEntDat,
     MsgEntSte,
+    // dropped status word
+    MsgEntSteDrop,
     MsgAttk(String),
+    MsgMCXClr(usize),
 }
 
 impl ErrMsg {
     fn value(&self) -> String {
         use ErrMsg::*;
         match self {
-            MsgEmpt => "",
-            MsgWrt => "Wrt",
-            MsgBCReady => "BC is ready",
-            MsgStaChg => "Status Changed",
-            MsgEntWrdRec => "Word Received",
-            MsgEntErrPty => "Parity Error",
-            MsgEntCmd => "CMD Received",
-            MsgEntCmdRcv => "CMD RCV Received",
-            MsgEntCmdTrx => "CMD TRX Received",
-            MsgEntCmdMcx => "CMD MCX Received",
-            MsgEntDat => "Data Received",
-            MsgEntSte => "Status Received",
-            MsgAttk(msg) => msg,
-        }.to_owned()
+            MsgEmpt => "".to_owned(),
+            // show write queue size
+            MsgWrt(wq) => format!("Wrt({})", wq).to_string(),
+            MsgBCReady => "BC is ready".to_owned(),
+            MsgStaChg(wq) => format!("Status Changed({})", wq).to_string(),
+            MsgEntWrdRec => "Word Received".to_owned(),
+            MsgEntErrPty => "Parity Error".to_owned(),
+            MsgEntCmd => "CMD Received".to_owned(),
+            MsgEntCmdRcv => "CMD RCV Received".to_owned(),
+            MsgEntCmdTrx => "CMD TRX Received".to_owned(),
+            MsgEntCmdMcx => "CMD MCX Received".to_owned(),
+            MsgEntDat => "Data Received".to_owned(),
+            MsgEntSte => "Status Received".to_owned(),
+            MsgEntSteDrop => "Status Dropped".to_owned(),
+            MsgAttk(msg) => msg.to_owned(),
+            // mode change
+            MsgMCXClr(mem_len) => format!("MCX[{}] Clr", mem_len),
+        }
     }
 }
 
 pub fn format_log(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> String {
     return format!(
-        "{} {}{:02}-{:02} {:^19} {} {:^16} avg_d_t:{}",
+        "{} {}{:02}-{:02} {:^22} {} {:^22} avg_d_t:{}",
         l.0,
         l.1,
         l.2,
@@ -125,7 +134,7 @@ bitfield! {
 
 impl fmt::Display for Word {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "w:{:#027b}[{}]", self.0, self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
+        write!(f, "w:{:#027b}[{:02}]", self.0, self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
     }
 }
 
@@ -263,6 +272,8 @@ pub trait EventHandler: Clone + Send {
                 // if there was previously a command word recieved
                 // cancel previous command (clear state)
                 if d.number_of_current_cmd >= 2 {
+                    // cancel whatever going to write
+                    d.write_queue.clear();
                     d.reset_all_stateful();
                 }
                 if w.tr() == TR::Receive && (w.mode() == 1 || w.mode() == 0) {
@@ -295,7 +306,8 @@ pub trait EventHandler: Clone + Send {
                 d.write(Word::new_data((i + 1) as u32));
             }
         }
-        d.reset_all_stateful();
+        let current_cmds = d.reset_all_stateful();
+        d.number_of_current_cmd = current_cmds;
     }
     fn default_on_cmd_rcv(&mut self, d: &mut Device, w: &mut Word) {
         d.log(*w, ErrMsg::MsgEntCmdRcv);
@@ -329,9 +341,12 @@ pub trait EventHandler: Clone + Send {
                         d.set_state(State::AwtData);
                     }
                     30 => {
-                        // clear cache
+                        // clear cache (only when it is recieving data)
+                        d.log(WRD_EMPTY, ErrMsg::MsgMCXClr(d.memory.len()));
                         d.reset_all_stateful();
-                        d.set_state(State::Off);
+                        d.set_state(State::Idle);
+                        // clear write queue (cancel the status words to be sent)
+                        d.write_queue.clear();
                     }
                     31 => {
                         // cancel operation
@@ -408,7 +423,10 @@ pub trait EventHandler: Clone + Send {
                         d.reset_all_stateful();
                     }
                 }
-                _ => {}
+                _ => {
+                    // dropped status word 
+                    d.log(*w, ErrMsg::MsgEntSteDrop);
+                }
             }
         }
     }
@@ -487,7 +505,8 @@ impl Device {
         return self.receiver.try_recv();
     }
 
-    pub fn reset_all_stateful(&mut self) {
+    pub fn reset_all_stateful(&mut self) -> u8 {
+        let current_cmd = self.number_of_current_cmd;
         self.set_state(State::Idle);
         self.number_of_current_cmd = 0;
         self.delta_t_start = 0;
@@ -495,6 +514,9 @@ impl Device {
         self.dword_count = 0;
         self.dword_count_expected = 0;
         self.in_brdcst = false;
+        // return the previous number of cmd
+        // in case it shouldn't be reseted.
+        return current_cmd;
     }
 
     pub fn log(&mut self, word: Word, e: ErrMsg) {
@@ -526,7 +548,7 @@ impl Device {
 
     pub fn set_state(&mut self, state: State) {
         self.state = state;
-        self.log(WRD_EMPTY, ErrMsg::MsgStaChg);
+        self.log(WRD_EMPTY, ErrMsg::MsgStaChg(self.write_queue.len()));
     }
 
     pub fn act_bc2rt(&mut self, dest: u8, data: &Vec<u32>) {
@@ -581,7 +603,10 @@ impl System {
     pub fn new(max_devices: u32, write_delays: u128) -> Self {
         let clock = Instant::now();
         let home_dir = Utc::now().format("%F-%H-%M-%S-%f").to_string();
-        let _ = create_dir(PathBuf::from(&home_dir));
+
+        if CONFIG_SAVE_DEVICE_LOGS || CONFIG_SAVE_SYS_LOGS {
+            let _ = create_dir(PathBuf::from(&home_dir));
+        }
 
         let mut sys = System {
             n_devices: 0,
@@ -626,7 +651,7 @@ impl System {
             panic!("tried to join but no threads exist");
         }
 
-        println!("Merging logs...");
+        // println!("Merging logs...");
         for device_mx in &self.devices {
             let device = device_mx.lock().unwrap();
             device.log_merge(&mut self.logs);
@@ -713,7 +738,7 @@ impl System {
                     if !go.load(Ordering::Relaxed) || device.state == State::Off {
                         spin_sleeper.sleep_ns(1000_000);
                     }
-                    {
+                    if device.state != State::Off {
                         if device.mode == Mode::BC && device.state == State::Idle {
                             device.log(WRD_EMPTY, ErrMsg::MsgBCReady);
                             local_router.scheduler.on_bc_ready(&mut device);
@@ -731,7 +756,7 @@ impl System {
                                 // if now it is the time to actually write
                                 if entry.0 <= current {
                                     // log can be slower than write ...
-                                    device.log(entry.1, ErrMsg::MsgWrt);
+                                    device.log(entry.1, ErrMsg::MsgWrt(wq));
                                     for (i, s) in device.transmitters.iter().enumerate() {
                                         if (i as u32) != device.id {
                                             let _e = s.try_send(entry.1);
@@ -746,6 +771,9 @@ impl System {
                             // }
                             // clearing all the data (otherwise delta_t keeps increasing)
                             device.write_queue.retain(|x| (*x).0 > current);
+                            if device.write_queue.len() == 0 {
+                                device.number_of_current_cmd = 0;
+                            }
                             // device.write_queue.clear();
                         }
 

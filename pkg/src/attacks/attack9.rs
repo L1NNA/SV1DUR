@@ -40,21 +40,16 @@ impl DataCorruptionAttack {
         );
     }
 
-    pub fn verify(
-        &self,
-        devices: &std::vec::Vec<std::sync::Arc<std::sync::Mutex<Device>>>,
-        logs: &Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
-    ) -> bool {
+    pub fn verify(&self, system: &System) -> bool {
         let mut recieved_faked = 0;
-
-        for l in logs {
+        for l in &system.logs {
             if l.6 == ErrMsg::MsgBCReady {
                 recieved_faked = 0;
             }
             if l.6 == ErrMsg::MsgEntDat
                 && l.5.attk() == (AttackType::AtkDataCorruptionAttack as u32)
             {
-                println!("{} {}/{}", format_log(&l), recieved_faked, self.word_count);
+                // println!("{} {}/{}", format_log(&l), recieved_faked, self.word_count);
                 recieved_faked += 1;
                 if recieved_faked == self.word_count {
                     return true;
@@ -86,7 +81,7 @@ impl EventHandler for DataCorruptionAttack {
     }
 }
 
-fn eval_attack9(w_delays: u128, proto: Proto) -> bool {
+pub fn eval_attack9(w_delays: u128, proto: Proto) -> bool {
     // let mut delays_single = Vec::new();
     let n_devices = 4;
     // normal device has 4ns delays (while attacker has zero)
@@ -145,11 +140,11 @@ fn eval_attack9(w_delays: u128, proto: Proto) -> bool {
         AttackType::AtkDataCorruptionAttack,
     );
     sys.go();
-    sys.sleep_ms(1000);
+    sys.sleep_ms(400);
     sys.stop();
     sys.join();
     let l_router = Arc::clone(&attacker_router);
-    return l_router.lock().unwrap().handler.verify(&sys.devices, &sys.logs);
+    return l_router.lock().unwrap().handler.verify(&sys);
     // let l_attk = l_router.unwrap().handler;
     // .lock().unwrap();
     // return l_router.unwrap().handler.verify(&devices, &logs);
