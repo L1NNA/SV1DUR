@@ -37,23 +37,22 @@ pub enum ErrMsg {
 
 impl ErrMsg {
     fn value(&self) -> String {
+        use ErrMsg::*;
         match self {
-            ErrMsg::MsgEmpt => "".to_owned(),
-            ErrMsg::MsgWrt => "Wrt".to_owned(),
-            ErrMsg::MsgBCReady => "BC is ready".to_owned(),
-            ErrMsg::MsgStaChg => "Status Changed".to_owned(),
-            ErrMsg::MsgEntWrdRec => "Word Received".to_owned(),
-            ErrMsg::MsgEntErrPty => "Parity Error".to_owned(),
-            ErrMsg::MsgEntCmd => "CMD Received".to_owned(),
-            ErrMsg::MsgEntCmdRcv => "CMD RCV Received".to_owned(),
-            ErrMsg::MsgEntCmdTrx => "CMD TRX Received".to_owned(),
-            ErrMsg::MsgEntCmdMcx => "CMD MCX Received".to_owned(),
-            ErrMsg::MsgEntDat => "Data Received".to_owned(),
-            ErrMsg::MsgEntSte => "Status Received".to_owned(),
-            ErrMsg::MsgAttk(msg) => {
-                return msg.to_owned();
-            }
-        }
+            MsgEmpt => "",
+            MsgWrt => "Wrt",
+            MsgBCReady => "BC is ready",
+            MsgStaChg => "Status Changed",
+            MsgEntWrdRec => "Word Received",
+            MsgEntErrPty => "Parity Error",
+            MsgEntCmd => "CMD Received",
+            MsgEntCmdRcv => "CMD RCV Received",
+            MsgEntCmdTrx => "CMD TRX Received",
+            MsgEntCmdMcx => "CMD MCX Received",
+            MsgEntDat => "Data Received",
+            MsgEntSte => "Status Received",
+            MsgAttk(msg) => msg,
+        }.to_owned()
     }
 }
 
@@ -564,9 +563,7 @@ impl System {
     pub fn new(max_devices: u32, write_delays: u128) -> Self {
         let clock = Instant::now();
         let home_dir = Utc::now().format("%F-%H-%M-%S-%f").to_string();
-
-        // i don't understand... why I have to clone..
-        let _ = create_dir(PathBuf::from(home_dir.clone()));
+        let _ = create_dir(PathBuf::from(&home_dir));
 
         let mut sys = System {
             n_devices: 0,
