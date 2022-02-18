@@ -1,6 +1,6 @@
 use crate::sys::{
-    AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
-    Router, State, System, Word, WRD_EMPTY,
+    AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
+    EventHandler, Mode, Proto, Router, State, System, Word, WRD_EMPTY,
 };
 use std::sync::{Arc, Mutex};
 
@@ -19,13 +19,24 @@ impl ShutdownAttackRT {
             WRD_EMPTY,
             ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", self.target).to_string()),
         );
-        let word_count = 4;
-        let tr = 1;
+        let mode_code = 4;
+        let tr = 0;
         self.attack_times.push(d.clock.elapsed().as_nanos());
-        let w = Word::new_cmd(self.target, word_count, tr);
+        let mut w = Word::new_cmd(self.target, mode_code, tr);
+        w.set_mode(1);
         d.write(w);
         self.success = true;
-        d.set_state(State::Off); // Not sure what's going on here yet.  TODO come back to this.
+        // d.set_state(State::Off); // Not sure what's going on here yet.  TODO come back to this.
+    }
+    pub fn verify(&self, system: &System) -> bool {
+        for d in &system.devices {
+            let device = d.lock().unwrap();
+            println!("{}", device);
+            if device.state == State::Off {
+                return true;
+            }
+        }
+        return false;
     }
 }
 
@@ -55,12 +66,11 @@ impl EventHandler for ShutdownAttackRT {
     }
 }
 
-#[allow(dead_code)]
-pub fn test_attack5() {
+pub fn eval_attack5(w_delays: u128, proto: Proto) -> bool {
     // let mut delays_single = Vec::new();
-    let n_devices = 8;
+    let n_devices = 4;
     // normal device has 4ns delays (while attacker has zero)
-    let w_delays = 4000;
+    // let w_delays = 40000;
     let mut sys = System::new(n_devices as u32, w_delays);
 
     // the last device is kept for attacker
@@ -71,8 +81,8 @@ pub fn test_attack5() {
                 total_device: n_devices - 1,
                 target: 0,
                 data: vec![1, 2, 3],
-                proto: Proto::BC2RT,
-                proto_rotate: true,
+                proto: proto,
+                proto_rotate: false,
             },
             // control device-level response
             handler: DefaultEventHandler {},
@@ -94,33 +104,55 @@ pub fn test_attack5() {
             );
         }
     }
-    let attacker_router = Router {
-        // control all communications (bc only)
-        scheduler: DefaultScheduler {
-            total_device: n_devices - 1,
-            target: 0,
-            data: vec![1, 2, 3],
-            proto: Proto::BC2RT,
-            proto_rotate: true,
-        },
-        // control device-level response
-        handler: ShutdownAttackRT {
-            attack_times: Vec::new(),
-            word_count: 0u8,
-            success: false,
-            target: 4, // attacking RT address @4
-            target_found: false,
-        },
+    let attk = ShutdownAttackRT {
+        attack_times: Vec::new(),
+        word_count: 0u8,
+        success: false,
+        target: 2, // attacking RT address @4
+        target_found: false,
     };
+    let attacker_router = Arc::new(Mutex::new(Router {
+        // control all communications (bc only)
+        scheduler: EmptyScheduler {},
+        // control device-level response
+        handler: attk,
+    }));
 
     sys.run_d(
         n_devices - 1,
         Mode::RT,
-        Arc::new(Mutex::new(attacker_router)),
+        Arc::clone(&attacker_router),
         AttackType::AtkShutdownAttackRT,
     );
     sys.go();
-    sys.sleep_ms(10);
+    sys.sleep_ms(100);
     sys.stop();
     sys.join();
+    let l_router = Arc::clone(&attacker_router);
+    return l_router.lock().unwrap().handler.verify(&sys);
+    // let l_attk = l_router.unwrap().handler;
+    // .lock().unwrap();
+    // return l_router.unwrap().handler.verify(&devices, &logs);
+    // return handler.verify
+}
+
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn test_attk_5_r2r_succeed() {
+        // 12_000 based on the protocol but there is a probability
+        // of success. so here we made it higher
+        assert!(eval_attack5(40_000, Proto::RT2RT) == true);
+    }
+    #[test]
+    fn test_attk_5_b2r_succeed() {
+        assert!(eval_attack5(40_000, Proto::BC2RT) == true);
+    }
+    #[test]
+    fn test_attk_5_r2b_succeed() {
+        assert!(eval_attack5(40_000, Proto::RT2BC) == true);
+    }
 }

@@ -90,7 +90,7 @@ pub fn eval_all() {
 
     let mut delays = vec![];
     for r in result {
-        let joined: String = r.2.iter().map(|&id| id.to_string() + ",").collect();
+        let joined: String = r.2.iter().map( |&id| id.to_string() + ",").collect();
         println!("{:?}, {:?}", r.0, joined);
         delays = r.1;
     }

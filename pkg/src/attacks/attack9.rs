@@ -40,14 +40,9 @@ impl DataCorruptionAttack {
         );
     }
 
-    pub fn verify(
-        &self,
-        devices: &std::vec::Vec<std::sync::Arc<std::sync::Mutex<Device>>>,
-        logs: &Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
-    ) -> bool {
+    pub fn verify(&self, system: &System) -> bool {
         let mut recieved_faked = 0;
-
-        for l in logs {
+        for l in &system.logs {
             if l.6 == ErrMsg::MsgBCReady {
                 recieved_faked = 0;
             }
@@ -149,7 +144,7 @@ pub fn eval_attack9(w_delays: u128, proto: Proto) -> bool {
     sys.stop();
     sys.join();
     let l_router = Arc::clone(&attacker_router);
-    return l_router.lock().unwrap().handler.verify(&sys.devices, &sys.logs);
+    return l_router.lock().unwrap().handler.verify(&sys);
     // let l_attk = l_router.unwrap().handler;
     // .lock().unwrap();
     // return l_router.unwrap().handler.verify(&devices, &logs);
