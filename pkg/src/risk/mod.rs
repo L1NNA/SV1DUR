@@ -1,3 +1,5 @@
+use crate::attacks::attack10::eval_attack10;
+use crate::attacks::attack3::eval_attack3;
 use crate::attacks::attack9::eval_attack9;
 use crate::sys::{
     format_log, AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
@@ -18,11 +20,11 @@ We have 8 attack vectors:
 
 Attack_01.py is the collision attack against the bus, which is AV8.
 Attack_02.py is the collision attack against an RT, which is AV8 (but against an RT instead of the entire bus).
-Attack_03.py is the data trashing attack, which is AV6 (BC2RT and RT2RT).
+*Attack_03.py is the data trashing attack, which is AV6 (BC2RT and RT2RT).
 Attack_04.py is MITM attack, which is AV1.
 Attack_05.py is a shutdown attack on RT, which is AV2.
-Attack_06.py is fake status command against receive command, which is AV7 (BC2RT).
-Attack_07.py is fake status command against transmit command, which is AV7 (RT2BC).
+*Attack_06.py is fake status command against receive command, which is AV7 (BC2RT).
+*Attack_07.py is fake status command against transmit command, which is AV7 (RT2BC).
 Attack_08.py is desynchronization attack against an RT, which is AV2.
 * Attack_09.py is data corruption attack, which is AV4 (RT2BC and RT2RT).
 * Attack_10.py is a command invalidation attack, which is AV5 (RT2BC and RT2RT).
@@ -30,8 +32,12 @@ Attack_08.py is desynchronization attack against an RT, which is AV2.
 */
 #[derive(Debug)]
 pub enum AttackVector {
-    AV4_RT2BC,
+    AV4_RT2BC, //attack 9
     AV4_RT2RT,
+    AV5_RT2BC, //attack 10
+    AV5_RT2RT,
+    AV6_BC2RT, //attack 3
+    AV6_RT2RT,
 }
 
 pub fn eval_attack_prob(attack_vector: AttackVector) -> (AttackVector, Vec<u128>, Vec<f32>) {
@@ -69,6 +75,18 @@ pub fn eval_attack_prob(attack_vector: AttackVector) -> (AttackVector, Vec<u128>
                 AttackVector::AV4_RT2RT => {
                     success = eval_attack9(delay, Proto::RT2RT);
                 }
+                AttackVector::AV5_RT2BC => {
+                    success = eval_attack10(delay, Proto::RT2BC);
+                }
+                AttackVector::AV5_RT2RT => {
+                    success = eval_attack10(delay, Proto::RT2RT);
+                }
+                AttackVector::AV6_BC2RT => {
+                    success = eval_attack10(delay, Proto::RT2BC);
+                }
+                AttackVector::AV6_RT2RT => {
+                    success = eval_attack10(delay, Proto::RT2RT);
+                }
             }
             if success {
                 prob += 1.0;
@@ -85,12 +103,16 @@ pub fn eval_attack_prob(attack_vector: AttackVector) -> (AttackVector, Vec<u128>
 
 pub fn eval_all() {
     let mut result = vec![];
-    result.push(eval_attack_prob(AttackVector::AV4_RT2BC));
-    result.push(eval_attack_prob(AttackVector::AV4_RT2RT));
+    // result.push(eval_attack_prob(AttackVector::AV4_RT2BC));
+    // result.push(eval_attack_prob(AttackVector::AV4_RT2RT));
+    // result.push(eval_attack_prob(AttackVector::AV5_RT2BC));
+    // result.push(eval_attack_prob(AttackVector::AV5_RT2RT));
+    // result.push(eval_attack_prob(AttackVector::AV6_BC2RT));
+    result.push(eval_attack_prob(AttackVector::AV6_RT2RT));
 
     let mut delays = vec![];
     for r in result {
-        let joined: String = r.2.iter().map( |&id| id.to_string() + ",").collect();
+        let joined: String = r.2.iter().map(|&id| id.to_string() + ",").collect();
         println!("{:?}, {:?}", r.0, joined);
         delays = r.1;
     }

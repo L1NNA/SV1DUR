@@ -131,7 +131,7 @@ pub fn eval_attack5(w_delays: u128, proto: Proto) -> bool {
     let l_router = Arc::clone(&attacker_router);
     return l_router.lock().unwrap().handler.verify(&sys);
     // let l_attk = l_router.unwrap().handler;
-    // .lock().unwrap();
+    // .lock().unwr();
     // return l_router.unwrap().handler.verify(&devices, &logs);
     // return handler.verify
 }
