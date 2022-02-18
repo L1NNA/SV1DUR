@@ -1,5 +1,7 @@
 use crate::attacks::attack10::eval_attack10;
 use crate::attacks::attack3::eval_attack3;
+use crate::attacks::attack6::eval_attack6;
+use crate::attacks::attack7::eval_attack7;
 use crate::attacks::attack9::eval_attack9;
 use crate::sys::{
     format_log, AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
@@ -38,6 +40,8 @@ pub enum AttackVector {
     AV5_RT2RT,
     AV6_BC2RT, //attack 3
     AV6_RT2RT,
+    AV7_BC2RT, //attack 6
+    AV7_RT2BC, //attack 7
 }
 
 pub fn eval_attack_prob(attack_vector: AttackVector) -> (AttackVector, Vec<u128>, Vec<f32>) {
@@ -82,10 +86,16 @@ pub fn eval_attack_prob(attack_vector: AttackVector) -> (AttackVector, Vec<u128>
                     success = eval_attack10(delay, Proto::RT2RT);
                 }
                 AttackVector::AV6_BC2RT => {
-                    success = eval_attack10(delay, Proto::RT2BC);
+                    success = eval_attack3(delay, Proto::BC2RT);
                 }
                 AttackVector::AV6_RT2RT => {
-                    success = eval_attack10(delay, Proto::RT2RT);
+                    success = eval_attack3(delay, Proto::RT2RT);
+                }
+                AttackVector::AV7_BC2RT => {
+                    success = eval_attack6(delay, Proto::BC2RT);
+                }
+                AttackVector::AV7_RT2BC => {
+                    success = eval_attack7(delay, Proto::RT2BC);
                 }
             }
             if success {

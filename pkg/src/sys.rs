@@ -35,6 +35,8 @@ pub enum ErrMsg {
     MsgEntCmdMcx,
     MsgEntDat,
     MsgEntSte,
+    // dropped status word
+    MsgEntSteDrop,
     MsgAttk(String),
     MsgMCXClr(usize),
 }
@@ -56,6 +58,7 @@ impl ErrMsg {
             MsgEntCmdMcx => "CMD MCX Received".to_owned(),
             MsgEntDat => "Data Received".to_owned(),
             MsgEntSte => "Status Received".to_owned(),
+            MsgEntSteDrop => "Status Dropped".to_owned(),
             MsgAttk(msg) => msg.to_owned(),
             // mode change
             MsgMCXClr(mem_len) => format!("MCX[{}] Clr", mem_len),
@@ -65,7 +68,7 @@ impl ErrMsg {
 
 pub fn format_log(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> String {
     return format!(
-        "{} {}{:02}-{:02} {:^19} {} {:^16} avg_d_t:{}",
+        "{} {}{:02}-{:02} {:^22} {} {:^22} avg_d_t:{}",
         l.0,
         l.1,
         l.2,
@@ -420,7 +423,10 @@ pub trait EventHandler: Clone + Send {
                         d.reset_all_stateful();
                     }
                 }
-                _ => {}
+                _ => {
+                    // dropped status word 
+                    d.log(*w, ErrMsg::MsgEntSteDrop);
+                }
             }
         }
     }

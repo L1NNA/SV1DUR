@@ -6,7 +6,7 @@ use risk::eval_all;
 use sys::{eval_sys, Proto};
 
 fn main() {
-    eval_all();
+    // eval_all();
     // eval_sys(0, 3, Proto::RT2RT, true);
     // test_attack0();
     // test_attack1();
@@ -19,4 +19,5 @@ fn main() {
     // test_attack8();
     // test_attack9();
     // eval_attack9();
+    let system = eval_sys(0, 4, Proto::RT2RT, true);
 }
