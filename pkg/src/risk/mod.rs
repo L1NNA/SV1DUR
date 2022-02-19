@@ -45,11 +45,14 @@ pub enum AttackVector {
 }
 
 pub fn eval_attack_prob(attack_vector: AttackVector) -> (AttackVector, Vec<u128>, Vec<f32>) {
-    let num_sims = 500;
-    let start = 4_000;
-    let end = 12_001;
+    let num_sims = 100;
+    let start: u128 = 4_000;
+    let end: u128 = 12_001;
+    let steps = 100;
 
-    let delays = (start..end).step_by(500).collect::<Vec<_>>();
+    let step_size = (end - start - 1) / steps;
+    let delays = (start..end).step_by(step_size as usize).collect::<Vec<_>>();
+    // println!("{:?}", delays);
     let mut probs = vec![];
     let m = MultiProgress::new();
     let sty = ProgressStyle::default_bar()
@@ -115,16 +118,18 @@ pub fn eval_all() {
     let mut result = vec![];
     // result.push(eval_attack_prob(AttackVector::AV4_RT2BC));
     // result.push(eval_attack_prob(AttackVector::AV4_RT2RT));
-    // result.push(eval_attack_prob(AttackVector::AV5_RT2BC));
-    // result.push(eval_attack_prob(AttackVector::AV5_RT2RT));
+    result.push(eval_attack_prob(AttackVector::AV5_RT2BC));
+    result.push(eval_attack_prob(AttackVector::AV5_RT2RT));
     // result.push(eval_attack_prob(AttackVector::AV6_BC2RT));
-    result.push(eval_attack_prob(AttackVector::AV6_RT2RT));
+    // result.push(eval_attack_prob(AttackVector::AV6_RT2RT));
+    // result.push(eval_attack_prob(AttackVector::AV7_BC2RT));
+    // result.push(eval_attack_prob(AttackVector::AV7_RT2BC));
 
     let mut delays = vec![];
     for r in result {
-        let joined: String = r.2.iter().map(|&id| id.to_string() + ",").collect();
-        println!("{:?}, {:?}", r.0, joined);
+        // let joined: String = r.2.iter().map(|&id| id.to_string() + ",").collect();
+        println!("\"{:?}\":{:?}", r.0, r.2);
         delays = r.1;
     }
-    println!("{:?}", delays)
+    println!("\"x=\"{:?}", delays)
 }
