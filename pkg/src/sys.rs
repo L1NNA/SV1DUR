@@ -120,13 +120,13 @@ bitfield! {
     // it was 13, 9 but since we use instrumentation bit
     // we have kept reduce the sub-address space to 15.
     pub sub_address, set_sub_address: 13, 10;
-    pub mode, set_mode: 13, 11;
+    pub mode, set_mode: 13, 10;
     // pub mode, set_mode: 13, 9;
     pub dword_count, set_dword_count: 18, 14;
     pub mode_code, set_mode_code: 18, 14;
     // for data word
     u32;
-    pub all,_ : 20, 0;
+    pub all,_ : 19, 0;
     pub data, set_data: 18, 3;
     // additional (attack type):
     pub attk, set_attk: 24,21;
