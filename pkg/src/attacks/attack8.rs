@@ -1,6 +1,6 @@
 use crate::sys::{
     AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
-    Router, System, Word, WRD_EMPTY, TR
+    Router, System, Word, WRD_EMPTY, TR, Synchronization
 };
 use std::sync::{Arc, Mutex};
 
@@ -23,7 +23,7 @@ impl DesynchronizationAttackOnRT {
             ),
         );
         let tr = TR::Receive;
-        let word_count = 17;
+        let word_count = Synchronization;
         self.attack_times.push(d.clock.elapsed().as_nanos());
         let w = Word::new_cmd(self.target, word_count, tr);
         d.write(w);

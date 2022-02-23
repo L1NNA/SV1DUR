@@ -17,6 +17,9 @@ pub const CONFIG_PRINT_LOGS: bool = false;
 pub const CONFIG_SAVE_DEVICE_LOGS: bool = false;
 pub const CONFIG_SAVE_SYS_LOGS: bool = false;
 pub const BROADCAST_ADDRESS: u8 = 31;
+pub const ClearCache: u8 = 30;
+pub const TXshutdown: u8 = 4;
+pub const Synchronization: u8 = 17;
 
 #[allow(unused)]
 #[derive(Clone, Debug, PartialEq)]
