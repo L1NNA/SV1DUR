@@ -1,0 +1,8 @@
+[package]
+name = "Flight Data Recorder"
+authors = "Ryan Kerr <ryan@rykr.ca>"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+simconnect = "0.1.3"
