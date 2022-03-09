@@ -1,8 +1,10 @@
 [package]
-name = "Flight Data Recorder"
-authors = "Ryan Kerr <ryan@rykr.ca>"
+name = "Sketchy Flight Data Recorder"
+authors = ["Ryan Kerr <ryan@rykr.ca>"]
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 simconnect = "0.1.3"
+sqlite = "0.26.0"
+chrono = "0.4.0"

@@ -5,6 +5,7 @@ use sqlite;
 use std::time::Duration;
 use std::thread::sleep;
 use std::mem::transmute_copy;
+use std::io::{Error, ErrorKind};
 
 // SimConnect Aliases
 type ScType = simconnect::SIMCONNECT_DATATYPE;
@@ -26,11 +27,11 @@ type Boolean = bool;
 type Integer = i64;
 type Float = f64;
 
-#[repr(u32)]
-enum SystemEvent {
-    Sim,
-    Paused,
-}
+// Arbitrary IDs for Events
+const SYSTEM_EVENT_ID_SIM_START: u32 = 1;
+const SYSTEM_EVENT_ID_SIM_STOP: u32 = 2;
+const SYSTEM_EVENT_ID_PAUSE: u32 = 3;
+const SYSTEM_EVENT_ID_UNPAUSE: u32 = 4;
 
 // Unit Enumerations
 macro_rules! define_units {
@@ -108,13 +109,24 @@ macro_rules! define_sensors {
     };
 
     ( @insert $name:ident ) => {
-        concat!(":", stringify!($name))
+        stringify!($name)
     };
 
     ( @insert $name:ident , $($names:ident),+ ) => {
         concat! {
             define_sensors!(@insert $name), ", ",
             define_sensors!(@insert $($names),+)
+        }
+    };
+
+    ( @value $name:ident ) => {
+        concat!(":", stringify!($name))
+    };
+
+    ( @value $name:ident , $($names:ident),+ ) => {
+        concat! {
+            define_sensors!(@value $name), ", ",
+            define_sensors!(@value $($names),+)
         }
     };
 
@@ -132,7 +144,7 @@ macro_rules! define_sensors {
 
         impl SensorData {
             const SENSORS: [(&'static str, Unit); 0 $(+ define_sensors!(@1 $name))+] = [
-                $( ( $datum_name, $datum_type ) ),+
+                $( ($datum_name, $datum_type) ),+
             ];
 
             const SQL_CREATE_TABLE_STATEMENT: &'static str = concat! {
@@ -142,18 +154,18 @@ macro_rules! define_sensors {
             };
 
             const SQL_INSERT_STATEMENT: &'static str = concat! {
-                "insert into sensor_data values (",
+                "insert into sensor_data (",
                     define_sensors!(@insert $( $name ),+),
+                ") values (",
+                    define_sensors!(@value $( $name ),+),
                 ")"
             };
 
             #[inline(always)]
             fn persist(&self, statement: &mut sqlite::Statement) -> sqlite::Result<()> {
-                $(
-                    statement.bind_by_name(
-                        define_sensors!(@insert $name), self.$name
-                    )?;
-                )+
+                $(statement.bind_by_name(define_sensors!(@value $name), self.$name)?;)+
+                statement.next()?;
+                statement.reset()?;
                 Ok(())
             }
         }
@@ -224,19 +236,15 @@ define_sensors! {
     total_air_temperature <- "TOTAL AIR TEMPERATURE" in Celsius as Float;
 }
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-
-fn main() -> Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sim_conn = simconnect::SimConnector::new();
 
     if ! sim_conn.connect("SV1DUR Flight Data Recorder") {
-        return Err("Failed to connect to flight simulator");
+        return Err(Box::new(Error::new(ErrorKind::Other, "Failed to connect to flight simulator")));
     }
 
-    let dirname = chrono::Utc::now().format("%F-%H-%M-%S-%f").to_string();
-    std::fs::create_dir(std::path::PathBuf::from(&dirname))?;
-
-    let mut conn = sqlite::open(format!("{}/flight_data.sqlite", dirname))?;
+    let dirname = chrono::Utc::now().format("%F-%H-%M-%S");
+    let conn = sqlite::open(format!("flight_data_{}.sqlite", dirname))?;
     conn.execute(SensorData::SQL_CREATE_TABLE_STATEMENT)?;
 
     let mut stmt = conn.prepare(SensorData::SQL_INSERT_STATEMENT)?;
@@ -248,11 +256,12 @@ fn main() -> Result<()> {
     }
 
     sim_conn.request_data_on_sim_object(0, 0, 0, SECOND, 0, 0, 0, 0);
-    sim_conn.subscribe_to_system_events(SystemEvent::Sim as u32, "Sim");
-    sim_conn.subscribe_to_system_events(SystemEvent::Paused as u32, "Paused");
+    sim_conn.subscribe_to_system_event(SYSTEM_EVENT_ID_SIM_START, "SimStart");
+    sim_conn.subscribe_to_system_event(SYSTEM_EVENT_ID_SIM_STOP, "SimStop");
+    sim_conn.subscribe_to_system_event(SYSTEM_EVENT_ID_UNPAUSE, "Unpaused");
+    sim_conn.subscribe_to_system_event(SYSTEM_EVENT_ID_PAUSE, "Paused");
 
-    let mut paused = true;
-    println!("-- -- -- -- -- -- -- --");
+    let mut paused = false;
 
     loop {
         use simconnect::DispatchResult::*;
@@ -265,27 +274,25 @@ fn main() -> Result<()> {
                 unsafe {
                     if data.dwDefineID == 0 {
                         let sim_data: SensorData = transmute_copy(&data.dwData);
-                        sim_data.persist(&stmt);
+                        sim_data.persist(&mut stmt)?;
                     }
                 }
             },
             Ok(Event(event)) => {
-                unsafe {
-                    use SystemEvent::*;
-                    match event.uEventID {
-                        Sim => {
-                            paused = event.dwData == 0;
-
-                            if paused {
-                                println!("Simulation has stopped.");
-                                break;
-                            }
-                        },
-                        Paused => {
-                            paused = event.dwData == 1;
-                        },
-                        _ => ()
+                match event.uEventID {
+                    SYSTEM_EVENT_ID_PAUSE => {
+                        paused = true;
+                        println!("Simulation paused.");
+                    },
+                    SYSTEM_EVENT_ID_UNPAUSE => {
+                        paused = false;
+                        println!("Simulation unpaused.");
+                    },
+                    SYSTEM_EVENT_ID_SIM_STOP => {
+                        println!("Simulation stopped. Exiting.");
+                        break;
                     }
+                    _ => ()
                 }
             },
             Ok(Quit(_)) => {
