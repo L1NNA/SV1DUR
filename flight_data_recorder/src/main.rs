@@ -7,6 +7,9 @@ use std::thread::sleep;
 use std::mem::transmute_copy;
 use std::io::{Error, ErrorKind};
 
+use winapi::um::processthreadsapi::{GetCurrentThread, SetThreadPriority};
+use winapi::um::winbase::THREAD_PRIORITY_TIME_CRITICAL;
+
 // SimConnect Aliases
 type ScType = simconnect::SIMCONNECT_DATATYPE;
 type ScPeriod = simconnect::SIMCONNECT_PERIOD;
@@ -95,6 +98,14 @@ define_units! {
     PoundsPerHour: FLOAT64 = "pounds per hour",
 
     Gallons: FLOAT64 = "gallons",
+
+    // Apparently there is a difference between these units
+    Position: FLOAT64 = "position", // "Part" base scale
+    Position16k: INT64 = "position 16K", // 16 bit int
+    Position32k: INT64 = "position 32K", // 32 bit int
+    Position128: INT64 = "position 128", // Value between 0 - 128
+
+    PercentOver100: FLOAT64 = "percent over 100",
 }
 
 macro_rules! define_sensors {
@@ -153,6 +164,7 @@ macro_rules! define_sensors {
             const SQL_CREATE_TABLE_STATEMENT: &'static str = concat! {
                 "create table sensor_data (",
                     "elapsed_ms integer,",
+                    "delta_ms integer,",
                     define_sensors!(@column $( $name $type ),+),
                 ")"
             };
@@ -160,16 +172,22 @@ macro_rules! define_sensors {
             const SQL_INSERT_STATEMENT: &'static str = concat! {
                 "insert into sensor_data (",
                     "elapsed_ms,",
+                    "delta_ms,",
                     define_sensors!(@insert $($name),+),
                 ") values (",
                     ":elapsed_ms,",
+                    ":delta_ms,",
                     define_sensors!(@value $($name),+),
                 ")"
             };
 
             #[inline(always)]
-            fn persist(&self, stmt: &mut sqlite::Statement, ts: Duration) -> sqlite::Result<()> {
-                stmt.bind_by_name(":elapsed_ms", ts.as_millis() as i64);
+            fn persist(&self, stmt: &mut sqlite::Statement, elapsed: Duration, delta: Duration)
+                    -> sqlite::Result<()> {
+
+                // Elapsed time is 
+                stmt.bind_by_name(":elapsed_ms", elapsed.as_millis() as i64)?;
+                stmt.bind_by_name(":delta_ms", delta.as_millis() as i64)?;
                 $(stmt.bind_by_name(define_sensors!(@value $name), self.$name)?;)+
                 stmt.next()?;
                 stmt.reset()?;
@@ -182,6 +200,27 @@ macro_rules! define_sensors {
 define_sensors! {
     // TIME
     absolute_time <- "ABSOLUTE TIME" in Seconds as Integer;
+
+    // CONTROL INFORMATION
+    yoke_x_position <- "YOKE X POSITION" in Position as Float;
+    yoke_y_position <- "YOKE Y POSITION" in Position as Float;
+    yoke_x_indicator <- "YOKE X INDICATOR" in Position as Float;
+    yoke_y_indicator <- "YOKE Y INDICATOR" in Position as Float;
+
+    rudder_position <- "RUDDER POSITION" in Position as Float;
+    rudder_pedal_position <- "RUDDER PEDAL POSITION" in Position as Float;
+    rudder_pedal_indicator <- "RUDDER PEDAL INDICATOR" in Position as Float;
+
+    brakes_right_position <- "BRAKES RIGHT POSITION" in Position as Float;
+    brakes_left_position <- "BRAKES LEFT POSITION" in Position as Float;
+
+    throttle_level_position1 <- "GENERAL ENG THROTTLE LEVER POSITION:1" in PercentOver100 as Float;
+
+    spoiler_handle_position <- "SPOILER HANDLE POSITION" in Position as Float;
+    spoiler_right_position <- "SPOILER RIGHT POSITION" in Position as Float;
+    spoiler_left_position <- "SPOILER LEFT POSITION" in Position as Float;
+
+    flaps_handle_percent <- "FLAPS HANDLE POSITION" in PercentOver100 as Float;
 
     // INSTRUMENT CLUSTER
     indicated_airspeed <- "AIRSPEED INDICATED" in Knots as Float;
@@ -268,7 +307,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //sim_conn.subscribe_to_system_event(SYSTEM_EVENT_ID_UNPAUSE, "Unpaused");
     //sim_conn.subscribe_to_system_event(SYSTEM_EVENT_ID_PAUSE, "Paused");
 
+    unsafe {
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+    }
+
     let start_instant = Instant::now();
+    let mut delta_instant = Instant::now();
 
     loop {
         use simconnect::DispatchResult::*;
@@ -277,9 +321,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 unsafe {
                     if data.dwDefineID == 0 {
                         let sim_data: SensorData = transmute_copy(&data.dwData);
-                        sim_data.persist(&mut stmt, start_instant.elapsed())?;
+                        sim_data.persist(&mut stmt, start_instant.elapsed(), delta_instant.elapsed())?;
                     }
                 }
+
+                delta_instant = Instant::now();
             },
             Ok(Event(event)) => {
                 match event.uEventID {
@@ -297,7 +343,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => ()
         }
 
-        sleep(Duration::from_millis(10));
+        sleep(Duration::from_millis(2));
     }
 
     Ok(())
