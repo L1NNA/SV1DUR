@@ -17,7 +17,7 @@ impl FakeStatusReccmd {
     fn fake_status(&mut self, d: &mut Device) {
         self.target_found = false;
         self.attack_times.push(d.clock.elapsed().as_nanos());
-        let w = Word::new_status(self.target);
+        let w = Word::new_malicious_status(self.target);
         d.write(w);
         d.log(
             WRD_EMPTY,

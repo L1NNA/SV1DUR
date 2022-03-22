@@ -22,7 +22,7 @@ impl DataCorruptionAttack {
             ),
         );
         self.attack_times.push(d.clock.elapsed().as_nanos());
-        let w = Word::new_status(self.target);
+        let w = Word::new_malicious_status(self.target);
         d.write(w);
         for _ in 0..self.word_count {
             let w = Word::new_data(0x7171);

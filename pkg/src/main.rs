@@ -9,9 +9,9 @@ use crossbeam_channel::{bounded};
 #[allow(unused_imports)]
 use sys::{AttackType, Mode, State};
 use std::time::{Instant};
-mod bus_controller; //::{Address, MsgPri, HercScheduler};
+mod controllers; //::{Address, MsgPri, HercScheduler};
 #[allow(unused_imports)]
-use bus_controller::{Address, HercScheduler};
+use controllers::bus_controller::{Address, HercScheduler, FighterScheduler};
 
 #[allow(unused)]
 fn test_address_functions() {
@@ -51,6 +51,7 @@ fn test_address_functions() {
     }
 }
 
+#[allow(unused)]
 fn test_herc_scheduler() {
     let (_trans, recv) = bounded(512);
     let mut bc = sys::Device{
@@ -59,6 +60,8 @@ fn test_herc_scheduler() {
         ccmd: 0,
         mode: Mode::BC,
         state: State::Idle,
+        error_bit: false,
+        service_request: false,
         memory: Vec::new(),
         number_of_current_cmd: 0,
         in_brdcst: false,
@@ -87,9 +90,51 @@ fn test_herc_scheduler() {
     println!("{}", output);
 }
 
+fn test_fighter_scheduler() {
+    let (_trans, recv) = bounded(512);
+    let mut bc = sys::Device{
+        fake: false,
+        atk_type: AttackType::Benign,
+        ccmd: 0,
+        mode: Mode::BC,
+        state: State::Idle,
+        error_bit: false,
+        service_request: false,
+        memory: Vec::new(),
+        number_of_current_cmd: 0,
+        in_brdcst: false,
+        address: Address::BusControl as u8,  // Currently does not 
+        id: Address::BusControl as u32,
+        dword_count: 0,
+        dword_count_expected: 0,
+        clock: Instant::now(),
+        logs: Vec::new(),
+        transmitters: Vec::new(),
+        read_queue: Vec::new(),
+        write_queue: Vec::new(),
+        write_delays: 0,
+        receiver: recv,
+        delta_t_avg: 0,
+        delta_t_start: 0,
+        delta_t_count: 0,
+    };
+    let mut scheduler = FighterScheduler::new();
+    // let mut output: String = String::new();
+    for _ in 0..200 {
+        // if let Some(new_str) = 
+            scheduler.on_bc_ready(&mut bc);
+            // {
+            //     output = format!("{}{}", output, new_str);
+            // }
+
+    }
+    // println!("{}", output);
+}
+
 fn main() {
     // test_address_functions();
     
-    test_herc_scheduler();
+    // test_herc_scheduler();
 
+    test_fighter_scheduler();
 }

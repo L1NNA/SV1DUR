@@ -112,10 +112,20 @@ impl fmt::Display for Word {
 }
 
 impl Word {
-    pub fn new_status(src_addr: u8) -> Word {
+    pub fn new_status(addr: u8, service_request: bool, error_bit: bool) -> Word {
         let mut w = Word { 0: 0 };
         w.set_sync(1);
-        w.set_address(src_addr);
+        w.set_address(addr);
+        w.set_service_request_bit(service_request as u8);
+        w.set_message_errorbit(error_bit as u8);
+        w.calculate_parity_bit();
+        return w;
+    }
+
+    pub fn new_malicious_status(addr: u8) -> Word {
+        let mut w = Word {0: 0};
+        w.set_sync(1);
+        w.set_address(addr);
         w.calculate_parity_bit();
         return w;
     }
@@ -219,7 +229,7 @@ pub trait EventHandler: Clone + Send {
         self.default_on_dat(d, w);
     }
     fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
-        self.default_on_sts(d, w);
+        self.default_on_sts(d, w)
     }
 
     #[allow(unused)]
@@ -232,6 +242,9 @@ pub trait EventHandler: Clone + Send {
     fn default_on_err_parity(&mut self, d: &mut Device, w: &mut Word) {
         // log error tba
         d.log(*w, ErrMsg::MsgEntErrPty);
+        if d.state == State::AwtData {
+            d.error_bit = true;
+        }
     }
     fn default_on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         // cmds are only for RT, matching self's address
@@ -272,7 +285,7 @@ pub trait EventHandler: Clone + Send {
         d.log(*w, ErrMsg::MsgEntCmdTrx);
         if !d.fake {
             d.set_state(State::BusyTrx);
-            d.write(Word::new_status(d.address));
+            d.write(Word::new_status(d.address, d.service_request, d.error_bit));
             for i in 0..w.dword_count() {
                 d.write(Word::new_data((i + 1) as u32));
             }
@@ -342,7 +355,7 @@ pub trait EventHandler: Clone + Send {
                     if d.mode != Mode::BC {
                         // only real RT will responding status message
                         if !d.fake {
-                            d.write(Word::new_status(d.address));
+                            d.write(Word::new_status(d.address, d.service_request, d.error_bit));
                         }
                     }
                     d.reset_all_stateful();
@@ -350,7 +363,7 @@ pub trait EventHandler: Clone + Send {
             }
         }
     }
-    fn default_on_sts(&mut self, d: &mut Device, w: &mut Word) {
+    fn default_on_sts(&mut self, d: &mut Device, w: &mut Word){
         if d.mode == Mode::BC {
             d.log(*w, ErrMsg::MsgEntSte);
             // check delta_t
@@ -391,6 +404,9 @@ pub trait EventHandler: Clone + Send {
 
 pub trait Scheduler: Clone + Send {
     fn on_bc_ready(&mut self, d: &mut Device) {}
+    fn queue(&mut self, terminal: u8) {}
+    fn request_sr(&mut self, terminal: u8) {}
+    fn error_bit(&mut self, terminal: u8) {}
 }
 
 #[derive(Clone, Debug)]
@@ -406,6 +422,8 @@ pub struct Device {
     pub ccmd: u8,
     pub mode: Mode,
     pub state: State,
+    pub error_bit: bool,
+    pub service_request: bool,
     pub memory: Vec<u32>,
     pub number_of_current_cmd: u8,
     pub in_brdcst: bool,
@@ -513,6 +531,17 @@ impl Device {
         self.set_state(State::AwtStsRcvB2R);
         self.delta_t_start = self.clock.elapsed().as_nanos();
     }
+
+    pub fn act_bc2rt_wc(&mut self, dest: u8, dword_count: u8) {
+        self.set_state(State::BusyTrx);
+        self.write(Word::new_cmd(dest, dword_count, 0));
+        // for d in data {
+        //     self.write(Word::new_data(*d));
+        // }
+        self.set_state(State::AwtStsRcvB2R);
+        self.delta_t_start = self.clock.elapsed().as_nanos();
+    }
+
     pub fn act_rt2bc(&mut self, src: u8, dword_count: u8) {
         self.set_state(State::BusyTrx);
         self.write(Word::new_cmd(src, dword_count, 1));
@@ -644,6 +673,8 @@ impl System {
             atk_type: atk_type,
             ccmd: 0,
             state: State::Idle,
+            error_bit: false,
+            service_request: false,
             mode: mode,
             memory: Vec::new(),
             logs: Vec::new(),
@@ -750,6 +781,12 @@ impl System {
                                 } else {
                                     // status word
                                     handler.on_sts(&mut device, &mut w);
+                                    if w.service_request_bit() != 0 {
+                                        scheduler.request_sr(w.address());
+                                    }
+                                    // if w.message_errorbit() != 0 {
+                                    //     scheduler.();
+                                    // }
                                 }
                             } else {
                                 // data word
@@ -884,6 +921,10 @@ impl Scheduler for DefaultScheduler {
                 }
             }
         }
+    }
+
+    fn queue(&mut self, _terminal: u8) {
+
     }
 }
 
