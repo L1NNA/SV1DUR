@@ -11,3 +11,4 @@ Cargo.lock
 **/*.rs.bk
 **/2022*
 .DS_Store
+.vscode/launch.json
