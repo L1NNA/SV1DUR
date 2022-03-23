@@ -1,7 +1,8 @@
 use crate::sys::{
     AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
-    Router, System, Word, WRD_EMPTY,
+    Router, System, Word, WRD_EMPTY, TR
 };
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
 pub struct DesynchronizationAttackOnRT {
@@ -21,7 +22,7 @@ impl DesynchronizationAttackOnRT {
                 format!("Attacker>> Desynchronizing RT{} ...", self.target).to_string(),
             ),
         );
-        let tr = 0;
+        let tr = TR::Receive;
         let word_count = 17;
         self.attack_times.push(d.clock.elapsed().as_nanos());
         let w = Word::new_cmd(self.target, word_count, tr);
@@ -43,7 +44,7 @@ impl EventHandler for DesynchronizationAttackOnRT {
             // do we need the sub address?
             if self.flag == 0 {
                 let new_flag;
-                if w.tr() == 1 {
+                if w.tr() == TR::Transmit {
                     new_flag = 2;
                     self.word_count = w.dword_count();
                 } else {
@@ -51,7 +52,7 @@ impl EventHandler for DesynchronizationAttackOnRT {
                 }
                 self.flag = new_flag;
             }
-            if w.tr() == 0 {
+            if w.tr() == TR::Receive {
                 self.word_count = w.dword_count();
             }
             self.target_found = true;
@@ -112,9 +113,19 @@ pub fn test_attack8() {
         };
 
         if m == 0 {
-            sys.run_d(m as u8, Mode::BC, default_router, AttackType::Benign);
+            sys.run_d(
+                m as u8,
+                Mode::BC,
+                Arc::new(Mutex::new(default_router)),
+                AttackType::Benign,
+            );
         } else {
-            sys.run_d(m as u8, Mode::RT, default_router, AttackType::Benign);
+            sys.run_d(
+                m as u8,
+                Mode::RT,
+                Arc::new(Mutex::new(default_router)),
+                AttackType::Benign,
+            );
         }
     }
     let attacker_router = Router {
@@ -140,7 +151,7 @@ pub fn test_attack8() {
     sys.run_d(
         n_devices - 1,
         Mode::RT,
-        attacker_router,
+        Arc::new(Mutex::new(attacker_router)),
         AttackType::AtkDesynchronizationAttackOnRT,
     );
     sys.go();
