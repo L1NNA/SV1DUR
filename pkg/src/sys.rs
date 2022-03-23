@@ -3,8 +3,10 @@ use chrono::Utc;
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
 use spin_sleep;
 use std::fmt;
+#[allow(unused)]
 use std::fs::{create_dir, read_dir, File, OpenOptions};
 use std::io::prelude::*;
+#[allow(unused)]
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,8 +16,8 @@ use std::time::{Duration, Instant};
 pub const WRD_EMPTY: Word = Word { 0: 0 };
 pub const ATK_DEFAULT_DELAYS: u128 = 4000;
 pub const CONFIG_PRINT_LOGS: bool = false;
-pub const CONFIG_SAVE_DEVICE_LOGS: bool = false;
-pub const CONFIG_SAVE_SYS_LOGS: bool = false;
+pub const CONFIG_SAVE_DEVICE_LOGS: bool = true;
+pub const CONFIG_SAVE_SYS_LOGS: bool = true;
 pub const BROADCAST_ADDRESS: u8 = 31;
 
 #[allow(unused)]
@@ -429,6 +431,7 @@ pub trait EventHandler: Clone + Send {
                         d.delta_t_start = d.clock.elapsed().as_nanos();
                     }
                 }
+                #[allow(unused)]
                 State::AwtStsRcvR2R(src, dest) => {
                     // rt2rt (reciver confirmation)
                     // rt2rt
@@ -446,10 +449,14 @@ pub trait EventHandler: Clone + Send {
 }
 
 pub trait Scheduler: Clone + Send {
+    #[allow(unused)]
     fn on_bc_ready(&mut self, d: &mut Device) {}
+    #[allow(unused)]
     fn queue(&mut self, terminal: u8) {}
+    #[allow(unused)]
     fn request_sr(&mut self, terminal: u8) {}
-    fn error_bit(&mut self, terminal: u8) {}
+    #[allow(unused)]
+    fn error_bit(&mut self) {}
 }
 
 #[derive(Clone, Debug)]
@@ -579,7 +586,9 @@ impl Device {
         self.delta_t_start = self.clock.elapsed().as_nanos();
     }
 
+    #[allow(unused)]
     pub fn act_bc2rt_wc(&mut self, dest: u8, dword_count: u8) {
+        // This function is so that the "scheduler" does not need to know the data that will be passed from the BC.
         self.set_state(State::BusyTrx);
         self.write(Word::new_cmd(dest, dword_count, TR::Receive));
         // for d in data {
@@ -843,9 +852,9 @@ impl System {
                                     if w.service_request_bit() != 0 {
                                         local_router.scheduler.request_sr(w.address());
                                     }
-                                    // if w.message_errorbit() != 0 {
-                                    //     local_router.scheduler.();
-                                    // }
+                                    if w.message_errorbit() != 0 {
+                                        local_router.scheduler.error_bit();
+                                    }
                                 }
                             } else {
                                 // data word
@@ -854,53 +863,6 @@ impl System {
                             // clear cache
                             prev_word = (0, false, WRD_EMPTY);
                         }
-                        //     if !res.is_err() {
-                        //         let current = device.clock.elapsed().as_nanos();
-                        //         let mut w = res.unwrap();
-                        //         let collision: bool;
-                        //         let elements = device.read_queue.len();
-                        //         if elements > 0
-                        //             && device.read_queue[elements - 1].0 > current - word_time
-                        //         {
-                        //             // if the message was received before the previous message finished
-                        //             collision = true; // we need to acknowledge that there was a collision.  Parity error should only happen 50% of the time, but we'll say it always happens.
-                        //             device.read_queue[elements - 1].2 = true; // ensure the previous message is marked as a collision
-                        //         } else {
-                        //             collision = false;
-                        //         }
-                        //         device.read_queue.push((current, w, collision));
-                        //         handler.on_wrd_rec(&mut device, &mut w);
-                        //     }
-                        //     let rq = device.read_queue.clone(); // clone to avoid mutable vs immutable borrows
-                        //     if rq.len() > 0 {
-                        //         let current = device.clock.elapsed().as_nanos();
-                        //         for entry in rq.iter() {
-                        //             if entry.0 <= current - word_time {
-                        //                 // if the start time was 20us ago, we just finished receiving it
-                        //                 let mut w = entry.1;
-                        //                 if entry.2 {
-                        //                     // if the next message already started transmitting, before the first one finished, we get a parity error and both messages fail to deliver
-                        //                     handler.on_err_parity(&mut device, &mut w);
-                        //                 } else {
-                        //                     // Previous message was valid
-                        //                     // synchronization bit distinguishes data/(command/status) word
-                        //                     if w.sync() == 1 {
-                        //                         // device.log(w, ErrMsg::MsgEntCmd);
-                        //                         if w.instrumentation_bit() == 1 {
-                        //                             handler.on_cmd(&mut device, &mut w)
-                        //                         } else {
-                        //                             // status word
-                        //                             handler.on_sts(&mut device, &mut w);
-                        //                         }
-                        //                     } else {
-                        //                         // data word
-                        //                         handler.on_dat(&mut device, &mut w);
-                        //                     }
-                        //                 }
-                        //                 device.read_queue.retain(|x| (*x).0 > current);
-                        //             }
-                        //         }
-                        //     }
                     }
                     if exit.load(Ordering::Relaxed) {
                         //exiting
@@ -988,6 +950,10 @@ impl Scheduler for DefaultScheduler {
 
     fn queue(&mut self, _terminal: u8) {
 
+    }
+
+    fn error_bit(&mut self) {
+        
     }
 }
 
