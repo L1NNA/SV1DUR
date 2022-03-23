@@ -1,11 +1,14 @@
 #[allow(unused_imports)]
 use crate::sys::{
-    DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Router, System,
-    Word, WRD_EMPTY
+    DefaultScheduler, Router, System, WRD_EMPTY, Scheduler
 };
+use crate::devices::Device;
+use crate::event_handlers::{DefaultEventHandler, EventHandler};
+use crate::primitive_types::{ErrMsg, Mode, Word};
 #[allow(unused_imports)]
 use std::time::{Instant, Duration};
 use priority_queue::DoublePriorityQueue;
+use crate::primitive_types::{Address, MsgPri};
 
 #[allow(unused)]
 pub const ALERT_ON_COMPETING_CONTROLLER: bool = false; //if there is a competing bus controller, raise an alert;
@@ -16,195 +19,6 @@ pub const ALERT_ON_UNPROMPTED_STATUS: bool = false; // Alert if we see a status 
 #[allow(unused)]
 pub const ALERT_INTERUPTED_BEFORE_TRANSMIT: bool = false; // Alert if another RT sent data on the bus when we were asked to
 
-#[allow(unused)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Address {
-    BusControl,
-    FlightControls,
-    Trim,
-    Engine,
-    Flaps,
-    LandingGear,
-    Weapons,
-    Radar,
-    Rover,
-    Radio,
-    Rudder,
-    Ailerons,
-    Elevators,
-    Slats,
-    Spoilers,
-    Brakes,
-    Fuel,
-    Heading,
-    Altimeter,
-    Positioning, //GPS
-    Pitch,
-    ClimateControl,
-    Tailhook,
-    Gyro,
-    Climate,
-    Broadcast = 31,
-}
-
-#[allow(unused)]
-impl Address {
-    pub fn priority(&self, destination: &Address) -> MsgPri {
-        // Defines the "priority" for each pairing of devices.  
-        // This priority is used to determine how quickly the next message should be sent.
-        use Address::*;
-        use MsgPri::*;
-        match (self, destination) {
-            // With Feedback
-            (FlightControls,   Trim)              => Low,
-            (Trim,             FlightControls)    => Lowest,
-            (FlightControls,   Flaps)             => Low,
-            (Flaps,            FlightControls)    => Lowest,
-            (FlightControls,   Engine)            => VeryHigh,
-            (Engine,           FlightControls)    => High,
-            (FlightControls,   LandingGear)       => Low,
-            (LandingGear,      FlightControls)    => Lowest,
-            (FlightControls,   Weapons)           => VeryHigh,
-            (Weapons,          FlightControls)    => Medium,
-            // Without Feedback
-            (FlightControls, Rudder)      => VeryHigh,
-            (FlightControls, Ailerons)    => VeryHigh,
-            (FlightControls, Elevators)   => VeryHigh,
-            (FlightControls, Slats)       => VeryHigh,
-            (FlightControls, Spoilers)    => VeryHigh,
-            (FlightControls, Brakes)      => High,
-            //Sensors
-            (Fuel,         FlightControls) => Lowest,
-            (Heading,      FlightControls) => Medium,
-            (Altimeter,    FlightControls) => Medium,
-            (Positioning,  FlightControls) => Lowest,
-            (Pitch,        FlightControls) => Medium,
-            /*
-            Add in steering for the front wheel?
-            Climate control?
-            Radar
-            ROVER - 
-            Tailhook
-            */
-            _ => VeryHigh,
-        }
-    }
-
-    pub fn repeat_function(&self, destination: &Address) -> bool {
-        // This dictates whether or not a message will be repeated on a regular frequency.
-        use Address::*;
-        use MsgPri::*;
-        match (self, destination) {
-            // With Feedback
-            (FlightControls,   Trim)              => true,
-            (Trim,             FlightControls)    => true,
-            (FlightControls,   Flaps)             => true,
-            (Flaps,            FlightControls)    => true,
-            (FlightControls,   Engine)            => true,
-            (Engine,           FlightControls)    => true,
-            (FlightControls,   LandingGear)       => true,
-            (LandingGear,      FlightControls)    => true,
-            (FlightControls,   Weapons)           => true,
-            (Weapons,          FlightControls)    => true,
-            // Without Feedback
-            (FlightControls, Rudder)      => true,
-            (FlightControls, Ailerons)    => true,
-            (FlightControls, Elevators)   => true,
-            (FlightControls, Slats)       => true,
-            (FlightControls, Spoilers)    => true,
-            (FlightControls, Brakes)      => true,
-            //Sensors
-            (Fuel,         FlightControls) => true,
-            (Heading,      FlightControls) => true,
-            (Altimeter,    FlightControls) => true,
-            (Positioning,  FlightControls) => true,
-            (Pitch,        FlightControls) => true,
-            _ => false,
-        }
-    }
-
-    pub fn word_count(&self, destination: &Address) -> u8 {
-        // This dictates the number of words that need to be passed between the devices to transfer all of the data.
-        use Address::*;
-        use MsgPri::*;
-        match (self, destination) {
-            // With Feedback
-            (FlightControls,   Trim)              => 2, //one float32 should carry sufficient data
-            (Trim,             FlightControls)    => 2,
-            (FlightControls,   Flaps)             => 1, //A single u4 could do it, but we're going to send a whole word
-            (Flaps,            FlightControls)    => 1, // Planes can have leading and trailing edge flaps.  I don't know if they are controlled separately
-            (FlightControls,   Engine)            => 8, //We'll estimate a float32 for each of the engines (up to four engines) and 2 words per float32
-            (Engine,           FlightControls)    => 8, //Temperature, speed, 
-            (FlightControls,   LandingGear)       => 1, //Binary message, but we'll send a whole word
-            (LandingGear,      FlightControls)    => 1,
-            (FlightControls,   Weapons)           => 4, //Targeting information along with the weapon selected and whether or not to open the compartment
-            (Weapons,          FlightControls)    => 20, //confirmation data of currently configured system
-                                                        // 578 rounds of M61A1 Vulcan
-                                                        // 9 rockets
-                                                        // Bomb
-
-            // Without Feedback
-            (FlightControls, Rudder)      => 2, //float32 for degree
-            (FlightControls, Ailerons)    => 4, //float32 for degree on each wing
-            (FlightControls, Elevators)   => 4, //float32 for degree on each wing
-            (FlightControls, Slats)       => 4, //float32 for degree on each wing
-            (FlightControls, Spoilers)    => 4, //float32 for degree on each wing
-            (FlightControls, Brakes)      => 4, //float32 for degree on each side
-                                                //Brakes should have torque sensor
-                                                //Load on wheel sensor
-            //Sensors
-            (Fuel,         FlightControls) => 4, 
-            (Heading,      FlightControls) => 2, 
-            (Altimeter,    FlightControls) => 1,
-            (Positioning,  FlightControls) => 3, 
-            (Pitch,        FlightControls) => 6, 
-            _ => 2, //2 words for anything unlisted
-        }
-    }
-
-    pub fn on_sr(&self) -> (Address, u8) {
-        use Address::*;
-        match self {
-
-            Weapons => (FlightControls, 20),
-            _ => (FlightControls, 2),
-            // I also need to know how many words to send. 
-            // An i16 let's me use -1 as a sentinel value to indicate that the device will specify.  We could also just use any value.
-        }
-    }
-}
-
-#[allow(unused)]
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub enum MsgPri {
-    Immediate,
-    VeryHigh,
-    High,
-    Medium,
-    Low,
-    VeryLow,
-    Lowest,
-}
-
-#[allow(unused)]
-impl MsgPri {
-    pub fn delay(&self) -> u32 {
-        // The amount of delay to reach a desired message frequency.
-        // delays will be harmonic frequencies that double at each drop in priority
-        // 50Hz -- 1/50 = 0.02s -- 0.02 * 1000 * 1000 * 1000 = 20_000_000ns
-        use MsgPri::*;
-        match self {
-            Immediate   =>           0, // send this immediately
-            VeryHigh    =>  20_000_000, // 50Hz
-            High        =>  40_000_000, // 25Hz
-            Medium      =>  80_000_000, // 12.5Hz
-            Low         => 160_000_000, // 6.25Hz
-            VeryLow     => 320_000_000, // 3.125Hz
-            Lowest      => 640_000_000, // 1.5625Hz
-            _ => 0, // /infty Hz
-        }
-    }
-}
 
 #[derive(Hash, PartialEq, Eq, Copy, Clone)]
 pub struct Event {
@@ -299,11 +113,13 @@ impl HercScheduler {
     }
 }
 
+#[derive(Clone)]
 pub enum SystemState {
     Inactive,
     Active,
 }
 
+#[derive(Clone)]
 pub struct FighterScheduler {
     pub priority_list: DoublePriorityQueue<Event, u128>,
     timeout: u128,
@@ -317,7 +133,6 @@ pub struct FighterScheduler {
 }
 
 impl FighterScheduler {
-
     pub fn new() -> Self {
         use Address::*;
         use MsgPri::*;
@@ -437,7 +252,17 @@ impl FighterScheduler {
         return scheduler;
     }
 
-    pub fn on_bc_ready(&mut self, d: &mut Device) /*-> Option<String>*/ {
+    pub fn on_bc_ready(&mut self, d: &mut Device) {}
+
+    fn update_priority(&mut self, event: Event, time: u128) {
+        let delay = event.priority.delay() as u128;
+        let next_time = time + delay;
+        self.priority_list.push(event, next_time);
+    }
+}
+
+impl Scheduler for FighterScheduler {
+    fn on_bc_ready(&mut self, d: &mut Device) /*-> Option<String>*/ {
         // We pop the next message and wait until we should send it. This cannot be preempted, but that shouldn't be a problem.  
         // SR bits should only come during a message requested by the bus controller.
         let spin_sleeper = spin_sleep::SpinSleeper::new(1_000_000);
@@ -489,10 +314,10 @@ impl FighterScheduler {
         // self.timeout = bus_available; // d.clock.elapsed().as_nanos() + 20_000 + 16_000; // 20us for word transmission and 16us for timeout between messages
     }
 
-    pub fn request_sr(&mut self, rt: Address) {
-        let (dest, wc) = rt.on_sr();
+    fn request_sr(&mut self, rt: u8) {
+        let (dest, wc) = Address::from(rt).on_sr();
         let item = Event {
-            source: rt as Address,
+            source: Address::from(rt),
             destination: dest,
             priority: MsgPri::Immediate,
             repeating: false,
@@ -501,19 +326,13 @@ impl FighterScheduler {
         self.priority_list.push(item, 0);
     }
 
-    pub fn error_bit(&mut self) {
+    fn error_bit(&mut self) {
         match self.current_event {
             Some(event) => {
                 self.priority_list.push(event, 0);
             }
             _ => {}
         }
-    }
-
-    pub fn update_priority(&mut self, event: Event, time: u128) {
-        let delay = event.priority.delay() as u128;
-        let next_time = time + delay;
-        self.priority_list.push(event, next_time);
     }
 }
 

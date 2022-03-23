@@ -1,6 +1,10 @@
 mod attacks;
 mod risk;
 mod sys;
+mod simulation;
+mod primitive_types;
+mod event_handlers;
+mod devices;
 #[allow(unused)]
 use risk::eval_all;
 #[allow(unused_imports)]
@@ -10,11 +14,14 @@ use attacks::{
 };
 use crossbeam_channel::{bounded};
 #[allow(unused_imports)]
-use sys::{AttackType, Mode, State, System};
+use sys::{System};
 use std::time::{Instant};
 mod controllers; //::{Address, MsgPri, HercScheduler};
 #[allow(unused_imports)]
-use controllers::bus_controller::{Address, HercScheduler, FighterScheduler};
+use controllers::bus_controller::{HercScheduler, FighterScheduler};
+use primitive_types::{Address, AttackType, Mode, State};
+use devices::Device;
+use simulation::fighter_simulation;
 
 #[allow(unused)]
 fn test_address_functions() {
@@ -57,7 +64,7 @@ fn test_address_functions() {
 #[allow(unused)]
 fn test_herc_scheduler() {
     let (_trans, recv) = bounded(512);
-    let mut bc = sys::Device{
+    let mut bc = Device{
         fake: false,
         atk_type: AttackType::Benign,
         ccmd: 0,
@@ -95,7 +102,7 @@ fn test_herc_scheduler() {
 
 fn test_fighter_scheduler() {
     let (_trans, recv) = bounded(512);
-    let mut bc = sys::Device{
+    let mut bc = Device{
         fake: false,
         atk_type: AttackType::Benign,
         ccmd: 0,
@@ -156,5 +163,6 @@ fn main() {
     // test_fighter_scheduler();
 
     #[allow(unused)]
-    let system = eval_sys(0, 4, Proto::RT2RT, true);
+    // let system = eval_sys(0, 4, Proto::RT2RT, true);
+    fighter_simulation(0, 20);
 }
