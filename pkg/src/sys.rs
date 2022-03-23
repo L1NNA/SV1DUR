@@ -581,11 +581,11 @@ impl Device {
 
     pub fn act_bc2rt_wc(&mut self, dest: u8, dword_count: u8) {
         self.set_state(State::BusyTrx);
-        self.write(Word::new_cmd(dest, dword_count, 0));
+        self.write(Word::new_cmd(dest, dword_count, TR::Receive));
         // for d in data {
         //     self.write(Word::new_data(*d));
         // }
-        self.set_state(State::AwtStsRcvB2R);
+        self.set_state(State::AwtStsRcvB2R(dest));
         self.delta_t_start = self.clock.elapsed().as_nanos();
     }
 
