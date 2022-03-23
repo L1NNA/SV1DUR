@@ -1,6 +1,6 @@
 use crate::sys::{
-    format_log, AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
-    EventHandler, Mode, Proto, Router, State, System, Word, WRD_EMPTY, TR
+    AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
+    EventHandler, Mode, Proto, Router, System, Word, WRD_EMPTY, TR
 };
 use std::sync::{Arc, Mutex};
 

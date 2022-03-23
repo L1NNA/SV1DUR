@@ -501,7 +501,7 @@ impl FighterScheduler {
         self.priority_list.push(item, 0);
     }
 
-    pub fn error_bit(&mut self, rt: Address) {
+    pub fn error_bit(&mut self) {
         match self.current_event {
             Some(event) => {
                 self.priority_list.push(event, 0);

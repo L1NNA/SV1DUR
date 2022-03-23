@@ -1,11 +1,12 @@
 mod attacks;
 mod risk;
 mod sys;
+#[allow(unused)]
 use risk::eval_all;
 #[allow(unused_imports)]
 use attacks::{
-    test_attack1, test_attack10, test_attack2, test_attack3, test_attack4, test_attack5,
-    test_attack6, test_attack7, test_attack8, test_attack9,
+    test_attack1, eval_attack10, test_attack2, eval_attack3, test_attack4, eval_attack5,
+    eval_attack6, eval_attack7, test_attack8, eval_attack9,
 };
 use crossbeam_channel::{bounded};
 #[allow(unused_imports)]
@@ -154,5 +155,6 @@ fn main() {
 
     // test_fighter_scheduler();
 
+    #[allow(unused)]
     let system = eval_sys(0, 4, Proto::RT2RT, true);
 }

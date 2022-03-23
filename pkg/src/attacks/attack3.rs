@@ -1,6 +1,6 @@
 use crate::sys::{
     AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
-    EventHandler, Mode, Proto, Router, State, System, Word, TR, WRD_EMPTY,
+    EventHandler, Mode, Proto, Router, System, Word, TR, WRD_EMPTY,
 };
 use std::sync::{Arc, Mutex};
 
@@ -48,7 +48,7 @@ impl DataThrashingAgainstRT {
             }
         }
 
-        return return false;
+        return false;
     }
 }
 

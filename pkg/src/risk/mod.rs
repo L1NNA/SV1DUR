@@ -3,11 +3,13 @@ use crate::attacks::attack3::eval_attack3;
 use crate::attacks::attack6::eval_attack6;
 use crate::attacks::attack7::eval_attack7;
 use crate::attacks::attack9::eval_attack9;
+#[allow(unused)]
 use crate::sys::{
     format_log, AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
     EventHandler, Mode, Proto, Router, State, System, Word, WRD_EMPTY,
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
+#[allow(unused)]
 use std::thread;
 /*
 We have 8 attack vectors:
@@ -44,6 +46,7 @@ pub enum AttackVector {
     AV7_RT2BC, //attack 7
 }
 
+#[allow(unused)]
 pub fn eval_attack_prob(attack_vector: AttackVector) -> (AttackVector, Vec<u128>, Vec<f32>) {
     let num_sims = 500;
     let start = 4_000;
@@ -111,6 +114,7 @@ pub fn eval_attack_prob(attack_vector: AttackVector) -> (AttackVector, Vec<u128>
     return (attack_vector, delays, probs);
 }
 
+#[allow(unused)]
 pub fn eval_all() {
     let mut result = vec![];
     // result.push(eval_attack_prob(AttackVector::AV4_RT2BC));
