@@ -58,7 +58,7 @@ pub fn extract_contents(database: &str, component: Address) -> Option<LinkedList
 pub fn fighter_simulation(w_delays: u128) -> Result<()> {
     // let n_devices = 3;
     // let w_delays = w_delays;
-    let database = "flight_data_2022-03-11-22-39-41.sqlite";
+    let database = "sample_data.sqlite";
     let devices = vec![Address::BusControl, Address::FlightControls, Address::Flaps, Address::Engine, Address::Rudder, Address::Ailerons, 
                         Address::Elevators, Address::Spoilers, Address::Fuel, Address::Positioning, Address::Gyro, Address::Brakes];
     let mut sys = System::new(devices.len() as u32, w_delays);
