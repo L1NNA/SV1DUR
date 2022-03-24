@@ -144,17 +144,17 @@ impl FighterScheduler {
             //     word_count: 2,//one float32 should carry sufficient data
             // },
             Event {source: FlightControls, destination: Flaps, priority: Low,  repeating: true,
-                word_count: 1,
+                word_count: 2, //1,
             },
             // Event {source: Flaps,  destination: FlightControls,    priority: Low,  repeating: true,
             //     word_count: 1,
             // },
             Event {source: FlightControls, destination: Engine,    priority: VeryHigh, repeating: true,
-                word_count: 16, //We'll estimate a float32 for each of the engines (up to four engines) and 2 words per float32
+                word_count: 2, //16, //We'll estimate a float32 for each of the engines (up to four engines) and 2 words per float32
             },
-            Event {source: Engine, destination: FlightControls,    priority: High, repeating: true,
-                word_count: 16, //Temperature, speed, 
-            },
+            // Event {source: Engine, destination: FlightControls,    priority: High, repeating: true,
+            //     word_count: 16, //Temperature, speed, 
+            // },
             // Event {source: FlightControls, destination: LandingGear,   priority: Low,  repeating: true,
             //     word_count: 1, //Binary message, but we'll send a whole word
             // },
@@ -167,34 +167,37 @@ impl FighterScheduler {
             // Event {source: Weapons,    destination: BusControl,    priority: Medium,   repeating: true,
             //     word_count: 0, //Check for an SR and then activate the "service request" message.
             // },
-            // Without feedback
             Event {source: FlightControls, destination: Rudder,    priority: VeryHigh, repeating: true,
-                word_count: 2,//float32 for degree
+                word_count: 4, //2,//float32 for degree
             },
+            Event {source: Rudder, destination: FlightControls,    priority: VeryHigh, repeating: true,
+                word_count: 2, //2,//float32 for degree
+            },
+            // Without feedback
             Event {source: FlightControls, destination: Ailerons,  priority: VeryHigh, repeating: true,
-                word_count: 4,//float32 for degree on each wing
+                word_count: 8, //4,//float32 for degree on each wing
             },
             Event {source: FlightControls, destination: Elevators, priority: VeryHigh, repeating: true,
-                word_count: 4,//float32 for degree on each wing
+                word_count: 8, //4,//float32 for degree on each wing
             },
             // Event {source: FlightControls, destination: Slats, priority: VeryHigh, repeating: true,
             //     word_count: 4,//float32 for degree on each wing
             // },
             Event {source: FlightControls, destination: Spoilers,  priority: VeryHigh, repeating: true,
-                word_count: 4,//float32 for degree on each wing
+                word_count: 2, //4,//float32 for degree on each wing
             },
             // Sensors
             Event {source: Fuel,   destination: FlightControls,    priority: Lowest,   repeating: true,    
                 word_count: 4, //one float32 for quantity, one float32 for flow
             },
             Event {source: Gyro, destination: FlightControls,    priority: Medium,   repeating: true,    
-                word_count: 6, //one float32 for heading
+                word_count: 10, //one float32 for heading
             },
             // Event {source: Altimeter,  destination: FlightControls,    priority: Medium,   repeating: true,    
             //     word_count: 1,
             // },
             Event {source: Positioning,    destination: FlightControls,    priority: Lowest,   repeating: true,    
-                word_count: 3, // Lat, Long, Alt
+                word_count: 6, // Lat, Long, Alt
             },
             // Event {source: Pitch,   destination: FlightControls,    priority: Medium,   repeating: true,    
             //     word_count: 6, //float32 for pitch, bank, and roll

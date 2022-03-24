@@ -28,7 +28,7 @@ pub struct Device {
     pub state: State,
     pub error_bit: bool,
     pub service_request: bool,
-    pub memory: Vec<u32>,
+    pub memory: Vec<u16>,
     pub number_of_current_cmd: u8,
     pub in_brdcst: bool,
     pub address: u8,
@@ -57,7 +57,7 @@ impl Device {
         //     }
         // }
         if self.fake {
-            val.set_attk(self.atk_type as u32);
+            val.set_attk(self.atk_type as u8);
         }
         if self.write_queue.len() < 1 {
             self.write_queue
@@ -130,7 +130,7 @@ impl Device {
         self.log(WRD_EMPTY, ErrMsg::MsgStaChg(self.write_queue.len()));
     }
 
-    pub fn act_bc2rt(&mut self, dest: u8, data: &Vec<u32>) {
+    pub fn act_bc2rt(&mut self, dest: u8, data: &Vec<u16>) {
         self.set_state(State::BusyTrx);
         self.write(Word::new_cmd(dest, data.len() as u8, TR::Receive));
         for d in data {

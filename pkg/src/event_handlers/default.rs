@@ -87,7 +87,7 @@ pub trait EventHandler: Clone + Send {
             d.set_state(State::BusyTrx);
             d.write(Word::new_status(d.address, d.service_request, d.error_bit));
             for i in 0..w.dword_count() {
-                d.write(Word::new_data((i + 1) as u32));
+                d.write(Word::new_data((i + 1) as u16));
             }
         }
         let current_cmds = d.reset_all_stateful();

@@ -48,7 +48,7 @@ impl DataCorruptionAttack {
                 recieved_faked = 0;
             }
             if l.6 == ErrMsg::MsgEntDat
-                && l.5.attk() == (AttackType::AtkDataCorruptionAttack as u32)
+                && l.5.attk() == (AttackType::AtkDataCorruptionAttack as u8)
             {
                 // println!("{} {}/{}", format_log(&l), recieved_faked, self.word_count);
                 recieved_faked += 1;

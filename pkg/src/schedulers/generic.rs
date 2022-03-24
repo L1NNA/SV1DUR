@@ -32,7 +32,7 @@ pub struct DefaultScheduler {
     // data: Vec<u32>
     pub total_device: u8,
     pub target: u8,
-    pub data: Vec<u32>,
+    pub data: Vec<u16>,
     pub proto: Proto,
     pub proto_rotate: bool,
 }

@@ -6,6 +6,7 @@ mod simulation;
 mod primitive_types;
 mod event_handlers;
 mod devices;
+mod terminals;
 #[allow(unused)]
 use risk::eval_all;
 #[allow(unused_imports)]
@@ -22,8 +23,9 @@ mod schedulers; //::{Address, MsgPri, HercScheduler};
 use schedulers::{FighterScheduler, Proto, HercScheduler};
 use primitive_types::{Address, AttackType, Mode, State};
 use devices::Device;
-use simulation::fighter_simulation;
+use simulation::{fighter_simulation, extract_contents};
 use sys::{eval_sys};
+use terminals::{ComponentInfo, SplitInt};
 
 #[allow(unused)]
 fn test_address_functions() {
@@ -163,7 +165,18 @@ fn main() {
 
     // test_fighter_scheduler();
 
-    #[allow(unused)]
+    // #[allow(unused)]
     // let system = eval_sys(0, 4, Proto::RT2RT, true);
-    fighter_simulation(4, 20);
+    fighter_simulation(0);
+
+
+    // let database = "flight_data_2022-03-11-22-39-41.sqlite";
+    // let mut content = extract_contents(database, Address::Rudder).unwrap();
+    // while !content.is_empty() {
+    //     match content.pop_front() {
+    //         Some((time, data)) => println!("{:}: {:}, {:}", time, data[0], data[1]),
+    //         _ => {}
+    //     };
+    // }
+
 }

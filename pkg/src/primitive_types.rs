@@ -36,11 +36,12 @@ bitfield! {
     pub dword_count, set_dword_count: 18, 14;
     pub mode_code, set_mode_code: 18, 14;
     // for data word
-    u32;
-    pub all,_ : 20, 0;
+    pub attk, set_attk: 24,21;
+    u16;
     pub data, set_data: 18, 3;
     // additional (attack type):
-    pub attk, set_attk: 24,21;
+    u32;
+    pub all,_ : 20, 0;
 }
 
 impl fmt::Display for Word {
@@ -68,9 +69,9 @@ impl Word {
         return w;
     }
 
-    pub fn new_data(val: u32) -> Word {
+    pub fn new_data(val: u16) -> Word {
         let mut w = Word { 0: 0 };
-        w.set_data(val as u32);
+        w.set_data(val);
         w.calculate_parity_bit();
         return w;
     }

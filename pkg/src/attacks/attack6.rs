@@ -38,7 +38,7 @@ impl FakeStatusReccmd {
 
             if attk_session {
                 if l.6 == ErrMsg::MsgEntSte
-                    && l.5.attk() == (AttackType::AtkFakeStatusReccmd as u32)
+                    && l.5.attk() == (AttackType::AtkFakeStatusReccmd as u8)
                 {
                     println!("{}", format_log(l));
                     return true;
