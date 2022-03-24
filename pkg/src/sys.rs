@@ -1,10 +1,11 @@
-use crate::primitive_types::{ErrMsg, Word, Mode, State, TR, AttackType};
+use crate::primitive_types::{ErrMsg, Word, Mode, State, AttackType, WRD_EMPTY,
+CONFIG_SAVE_DEVICE_LOGS, CONFIG_SAVE_SYS_LOGS, ATK_DEFAULT_DELAYS};
 use crate::event_handlers::{EventHandler, DefaultEventHandler};
-use crate::devices::Device;
+use crate::devices::{Device, format_log};
+use crate::schedulers::{DefaultScheduler, Scheduler, Proto};
 use chrono::Utc;
-use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
+use crossbeam_channel::{bounded, Receiver, Sender};
 use spin_sleep;
-use std::fmt;
 #[allow(unused)]
 use std::fs::{create_dir, read_dir, File, OpenOptions};
 use std::io::prelude::*;
@@ -15,37 +16,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-pub const WRD_EMPTY: Word = Word { 0: 0 };
-pub const ATK_DEFAULT_DELAYS: u128 = 4000;
-pub const CONFIG_PRINT_LOGS: bool = false;
-pub const CONFIG_SAVE_DEVICE_LOGS: bool = true;
-pub const CONFIG_SAVE_SYS_LOGS: bool = true;
-pub const BROADCAST_ADDRESS: u8 = 31;
-
-pub fn format_log(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> String {
-    return format!(
-        "{} {}{:02}-{:02} {:^22} {} {:^22} avg_d_t:{}",
-        l.0,
-        l.1,
-        l.2,
-        l.3,
-        l.4.to_string(),
-        l.5,
-        l.6.value(),
-        l.7
-    );
-}
-
-pub trait Scheduler: Clone + Send {
-    #[allow(unused)]
-    fn on_bc_ready(&mut self, d: &mut Device) {}
-    #[allow(unused)]
-    fn queue(&mut self, terminal: u8) {}
-    #[allow(unused)]
-    fn request_sr(&mut self, terminal: u8) {}
-    #[allow(unused)]
-    fn error_bit(&mut self) {}
-}
 
 #[derive(Clone, Debug)]
 pub struct Router<K: Scheduler, V: EventHandler> {
@@ -198,7 +168,7 @@ impl System {
         let h = thread::Builder::new()
             .name(format!("{}", device_name).to_string())
             .spawn(move || {
-                let spin_sleeper = spin_sleep::SpinSleeper::new(1000);
+                let spin_sleeper = spin_sleep::SpinSleeper::new(1_000);
                 let mut local_router = device_router.lock().unwrap();
                 // read_time, valid message flag, word
                 let mut prev_word = (0, false, WRD_EMPTY);
@@ -331,67 +301,6 @@ impl System {
 }
 
 #[allow(unused)]
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Proto {
-    RT2RT = 0,
-    BC2RT = 1,
-    RT2BC = 2,
-}
-
-#[derive(Clone, Debug)]
-pub struct DefaultScheduler {
-    // val: u8,
-    // path: String,
-    // data: Vec<u32>
-    pub total_device: u8,
-    pub target: u8,
-    pub data: Vec<u32>,
-    pub proto: Proto,
-    pub proto_rotate: bool,
-}
-
-impl Scheduler for DefaultScheduler {
-    fn on_bc_ready(&mut self, d: &mut Device) {
-        self.target = self.target % (self.total_device - 1) + 1;
-        let another_target = self.target % (self.total_device - 1) + 1;
-        //
-        // d.act_rt2bc(self.target, self.data.len() as u8);
-        // a simple rotating scheduler
-        match self.proto {
-            Proto::RT2RT => {
-                d.act_rt2rt(self.target, another_target, self.data.len() as u8);
-                if self.proto_rotate {
-                    self.proto = Proto::BC2RT;
-                }
-            }
-            Proto::BC2RT => {
-                d.act_bc2rt(self.target, &self.data);
-                if self.proto_rotate {
-                    self.proto = Proto::RT2BC;
-                }
-            }
-            Proto::RT2BC => {
-                d.act_rt2bc(self.target, self.data.len() as u8);
-                if self.proto_rotate {
-                    self.proto = Proto::RT2RT;
-                }
-            }
-        }
-    }
-
-    fn queue(&mut self, _terminal: u8) {
-
-    }
-
-    fn error_bit(&mut self) {
-        
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct EmptyScheduler {}
-impl Scheduler for EmptyScheduler {}
-
 pub fn eval_sys(w_delays: u128, n_devices: u8, proto: Proto, proto_rotate: bool) -> System {
     // let n_devices = 3;
     // let w_delays = w_delays;

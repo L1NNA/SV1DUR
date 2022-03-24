@@ -4,10 +4,9 @@ use crate::attacks::attack6::eval_attack6;
 use crate::attacks::attack7::eval_attack7;
 use crate::attacks::attack9::eval_attack9;
 #[allow(unused)]
-use crate::sys::{
-    format_log, DefaultScheduler, EmptyScheduler, Proto, Router, System, WRD_EMPTY,
-};
-use crate::devices::Device;
+use crate::sys::{Router, System};
+use crate::schedulers::{DefaultScheduler, EmptyScheduler, Proto};
+use crate::devices::{Device, format_log};
 use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word};
 use crate::event_handlers::{EventHandler, DefaultEventHandler};
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
@@ -36,6 +35,7 @@ Attack_08.py is desynchronization attack against an RT, which is AV2.
 * Attack_10.py is a command invalidation attack, which is AV5 (RT2BC and RT2RT).
 
 */
+#[allow(non_camel_case_types)]
 #[derive(Debug)]
 pub enum AttackVector {
     AV4_RT2BC, //attack 9

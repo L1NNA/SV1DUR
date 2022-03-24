@@ -1,9 +1,7 @@
-use crate::sys::{
-    format_log, DefaultScheduler, EmptyScheduler,
-    Proto, Router, System, WRD_EMPTY, BROADCAST_ADDRESS
-};
+use crate::sys::{Router, System};
+use crate::schedulers::{DefaultScheduler, EmptyScheduler, Proto};
 use crate::devices::Device;
-use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR};
+use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS};
 use crate::event_handlers::{EventHandler, DefaultEventHandler};
 use std::sync::{Arc, Mutex};
 

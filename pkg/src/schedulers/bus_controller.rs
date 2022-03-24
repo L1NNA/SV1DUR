@@ -1,7 +1,6 @@
 #[allow(unused_imports)]
-use crate::sys::{
-    DefaultScheduler, Router, System, WRD_EMPTY, Scheduler
-};
+use crate::sys::{Router, System};
+use crate::schedulers::{DefaultScheduler, Scheduler};
 use crate::devices::Device;
 use crate::event_handlers::{DefaultEventHandler, EventHandler};
 use crate::primitive_types::{ErrMsg, Mode, Word};
@@ -265,7 +264,7 @@ impl Scheduler for FighterScheduler {
     fn on_bc_ready(&mut self, d: &mut Device) /*-> Option<String>*/ {
         // We pop the next message and wait until we should send it. This cannot be preempted, but that shouldn't be a problem.  
         // SR bits should only come during a message requested by the bus controller.
-        let spin_sleeper = spin_sleep::SpinSleeper::new(1_000_000);
+        let spin_sleeper = spin_sleep::SpinSleeper::new(100_000);
         let message = self.priority_list.pop_min();
         match message {
             Some((Event{source: src, destination: dst, priority: pri, repeating: repeat, word_count: wc}, mut time)) => {

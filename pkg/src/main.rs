@@ -1,3 +1,4 @@
+#![allow(unused)]
 mod attacks;
 mod risk;
 mod sys;
@@ -16,12 +17,13 @@ use crossbeam_channel::{bounded};
 #[allow(unused_imports)]
 use sys::{System};
 use std::time::{Instant};
-mod controllers; //::{Address, MsgPri, HercScheduler};
+mod schedulers; //::{Address, MsgPri, HercScheduler};
 #[allow(unused_imports)]
-use controllers::bus_controller::{HercScheduler, FighterScheduler};
+use schedulers::{FighterScheduler, Proto, HercScheduler};
 use primitive_types::{Address, AttackType, Mode, State};
 use devices::Device;
 use simulation::fighter_simulation;
+use sys::{eval_sys};
 
 #[allow(unused)]
 fn test_address_functions() {
@@ -140,7 +142,6 @@ fn test_fighter_scheduler() {
     }
     // println!("{}", output);
 }
-use sys::{eval_sys, Proto};
 
 fn main() {
     // eval_all();
@@ -164,5 +165,5 @@ fn main() {
 
     #[allow(unused)]
     // let system = eval_sys(0, 4, Proto::RT2RT, true);
-    fighter_simulation(0, 20);
+    fighter_simulation(4, 20);
 }

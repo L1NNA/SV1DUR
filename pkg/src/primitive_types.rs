@@ -1,6 +1,13 @@
 use bitfield::bitfield;
 use std::fmt;
 
+pub const WRD_EMPTY: Word = Word { 0: 0 };
+pub const ATK_DEFAULT_DELAYS: u128 = 4000;
+pub const CONFIG_PRINT_LOGS: bool = false;
+pub const CONFIG_SAVE_DEVICE_LOGS: bool = true;
+pub const CONFIG_SAVE_SYS_LOGS: bool = true;
+pub const BROADCAST_ADDRESS: u8 = 31;
+
 bitfield! {
     #[derive(Copy, Clone)]
     pub struct Word(u32);
@@ -365,32 +372,31 @@ impl From<u8> for Address {
     fn from(value: u8) -> Self {
         use Address::*;
         match value {
-            0 => BusControl,
-            1 => FlightControls,
-            2 => Trim,
-            3 => Engine,
-            4 => Flaps,
-            5 => LandingGear,
-            6 => Weapons,
-            7 => Radar,
-            8 => Rover,
-            9 => Radio,
-            10 => Rudder,
-            11 => Ailerons,
-            12 => Elevators,
-            13 => Slats,
-            14 => Spoilers,
-            15 => Brakes,
-            16 => Fuel,
-            17 => Heading,
-            18 => Altimeter,
-            19 => Positioning, //GPS
-            20 => Pitch,
-            21 => ClimateControl,
-            22 => Tailhook,
-            23 => Gyro,
-            24 => Climate,
-            
+            value if value == BusControl as u8 => BusControl,
+            value if value == FlightControls as u8 => FlightControls,
+            value if value == Trim as u8 => Trim,
+            value if value == Engine as u8 => Engine,
+            value if value == Flaps as u8 => Flaps,
+            value if value == LandingGear as u8 => LandingGear,
+            value if value == Weapons as u8 => Weapons,
+            value if value == Radar as u8 => Radar,
+            value if value == Rover as u8 => Rover,
+            value if value == Radio as u8 => Radio,
+            value if value == Rudder as u8 => Rudder,
+            value if value == Ailerons as u8 => Ailerons,
+            value if value == Elevators as u8 => Elevators,
+            value if value == Slats as u8 => Slats,
+            value if value == Spoilers as u8 => Spoilers,
+            value if value == Brakes as u8 => Brakes,
+            value if value == Fuel as u8 => Fuel,
+            value if value == Heading as u8 => Heading,
+            value if value == Altimeter as u8 => Altimeter,
+            value if value == Positioning as u8 => Positioning, //GPS
+            value if value == Pitch as u8 => Pitch,
+            value if value == ClimateControl as u8 => ClimateControl,
+            value if value == Tailhook as u8 => Tailhook,
+            value if value == Gyro as u8 => Gyro,
+            value if value == Climate as u8 => Climate,
             _ => Broadcast,
         }
     }
@@ -444,6 +450,3 @@ pub enum AttackType {
     AtkCommandInvalidationAttack = 10,
 }
 
-
-
-pub const WRD_EMPTY: Word = Word { 0: 0 };
