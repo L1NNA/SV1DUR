@@ -4,7 +4,7 @@ use crate::event_handlers::{EventHandler, DefaultEventHandler};
 use crate::devices::{Device, format_log};
 use crate::schedulers::{DefaultScheduler, Scheduler, Proto};
 use chrono::Utc;
-use crossbeam_channel::{bounded, Receiver, Sender};
+use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
 use spin_sleep;
 #[allow(unused)]
 use std::fs::{create_dir, read_dir, File, OpenOptions};
@@ -190,7 +190,7 @@ impl System {
 
                         // write is `asynchrnoized`
                         let wq = device.write_queue.len();
-                        let current = device.clock.elapsed().as_nanos();
+                        let mut current: u128 = device.clock.elapsed().as_nanos();
                         if wq > 0 {
                             // let mut w_logs = Vec::new();
                             for entry in device.write_queue.clone().iter() {
@@ -219,7 +219,12 @@ impl System {
                         }
 
                         let word_load_time = 0; //20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
-                        let res = device.read();
+                        let mut res: Result<Word, TryRecvError>;
+                        if prev_word.0 == 0 {
+                            res = device.maybe_block_read(); // Adding this line was marginally faster.  It may slow things down on a more capable computer.
+                        } else {
+                            res = device.read();
+                        }
                         if !res.is_err() {
                             if prev_word.0 == 0 {
                                 // empty cache, do replacement

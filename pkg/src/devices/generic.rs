@@ -1,6 +1,6 @@
 use std::fmt;
 use crate::primitive_types::{Mode, State, Word, ErrMsg, AttackType, WRD_EMPTY, TR};
-use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
+use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, RecvError, select, after};
 use std::time::{Duration, Instant};
 
 pub const CONFIG_PRINT_LOGS: bool = false;
@@ -84,6 +84,28 @@ impl Device {
         return self.receiver.try_recv();
     }
 
+    pub fn maybe_block_read(&self) -> Result<Word, TryRecvError> {
+        if self.mode == Mode::BC {
+            self.receiver.try_recv()
+            // if self.state == State::Idle {
+            //     self.receiver.try_recv()
+            // } else {
+            //     select! {  // This made this so much worse
+            //         recv(self.receiver) -> message => match message{Ok(word) => Ok(word), Err(_) => Err(TryRecvError::Empty)},
+            //         recv(after(Duration::from_nanos(14))) -> _ => Err(TryRecvError::Empty),
+            //     }
+            // }
+        } else if [State::Idle, State::AwtData].contains(&self.state) {
+            self.receiver.try_recv()
+        } else {
+            let message = self.receiver.recv();
+            match message {
+                Ok(word) => Ok(word),
+                Err(_) => Err(TryRecvError::Empty),
+            }
+        }
+    }
+
     pub fn reset_all_stateful(&mut self) -> u8 {
         let current_cmd = self.number_of_current_cmd;
         self.set_state(State::Idle);
@@ -104,7 +126,7 @@ impl Device {
             avg_delta_t = self.delta_t_avg / self.delta_t_count;
         }
         let l = (
-            self.clock.elapsed().as_micros(),
+            self.clock.elapsed().as_micros(), // .as_nanos(),
             self.mode,
             self.id,
             self.address,
@@ -160,6 +182,7 @@ impl Device {
         self.set_state(State::AwtStsTrxR2B(src));
         self.delta_t_start = self.clock.elapsed().as_nanos();
     }
+    
     pub fn act_rt2rt(&mut self, src: u8, dst: u8, dword_count: u8) {
         self.set_state(State::BusyTrx);
         self.write(Word::new_cmd(dst, dword_count, TR::Receive));
