@@ -8,14 +8,14 @@ pub const BROADCAST_ADDRESS: u8 = 31;
 
 #[derive(Clone)]
 pub struct OfflineHandler {
-    pub data: LinkedList<(u32, Vec<u16>)>,
+    pub data: LinkedList<(u32, Vec<Word>)>,
     time_offset: u128,
-    current_data: Option<Vec<u16>>,
+    current_data: Option<Vec<Word>>,
     latest_timestamp: u128,
 }
 
 impl OfflineHandler {
-    pub fn new(data: LinkedList<(u32, Vec<u16>)>) -> OfflineHandler {
+    pub fn new(data: LinkedList<(u32, Vec<Word>)>) -> OfflineHandler {
         let handler = OfflineHandler{data: data, time_offset: 0, current_data: None, latest_timestamp: 0,};
         handler
     }
@@ -37,11 +37,7 @@ impl EventHandler for OfflineHandler {
             }
             d.write(Word::new_status(d.address, d.service_request, d.error_bit));
             for data in self.current_data.as_ref().unwrap() {
-                d.write(Word::new_data(*data));
-            }
-
-            for i in 0..w.dword_count() {
-                d.write(Word::new_data((i + 1) as u16));
+                d.write(*data);
             }
         }
         let current_cmds = d.reset_all_stateful();
@@ -51,15 +47,15 @@ impl EventHandler for OfflineHandler {
 
 #[derive(Clone)]
 pub struct OfflineFlightControlsHandler {
-    pub data: LinkedList<(u32, Vec<u16>)>,
+    pub data: LinkedList<(u32, Vec<Word>)>,
     time_offset: u128,
-    current_data: Option<Vec<u16>>,
+    current_data: Option<Vec<Word>>,
     latest_timestamp: u128,
     destination: Option<Address>,
 }
 
 impl OfflineFlightControlsHandler {
-    pub fn new(data: LinkedList<(u32, Vec<u16>)>) -> OfflineFlightControlsHandler {
+    pub fn new(data: LinkedList<(u32, Vec<Word>)>) -> OfflineFlightControlsHandler {
         let handler = OfflineFlightControlsHandler{data: data, time_offset: 0, current_data: None, latest_timestamp: 0, destination: None};
         handler
     }
@@ -132,7 +128,7 @@ impl EventHandler for OfflineFlightControlsHandler {
                 _ => &self.current_data.as_ref().unwrap()[..8]
             };
             for data in slice {
-                d.write(Word::new_data(*data));
+                d.write(*data);
             }
         }
         let current_cmds = d.reset_all_stateful();

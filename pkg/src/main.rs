@@ -182,7 +182,7 @@ pub fn test_message_timing() {
     device_obj.act_rt2rt(1, 4, 18);
     let end = device_obj.clock.elapsed().as_nanos();
     println!("State change execution time: {:}-{:}={:}", state_end, state_start, state_end-state_start);
-    println!("execution time: {:}-{:}={:}", end, start, end-start);
+    println!("rt2rt execution time: {:}-{:}={:}", end, start, end-start);
     for log_entry in device_obj.logs {
         println!("{:}", format_log(&log_entry));
     }

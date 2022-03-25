@@ -1,6 +1,6 @@
 use rusqlite::{Connection, Result};
 use crate::sys::{System, Router};
-use crate::primitive_types::{Mode, AttackType, Address};
+use crate::primitive_types::{Mode, AttackType, Address, Word};
 use crate::event_handlers::{EventHandler, DefaultEventHandler, OfflineHandler, OfflineFlightControlsHandler};
 use crate::schedulers::{FighterScheduler, Proto, Scheduler};
 use crate::devices::Device;
@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::LinkedList;
 
 
-pub fn extract_contents(database: &str, component: Address) -> Option<LinkedList<(u32, Vec<u16>)>> {
+pub fn extract_contents(database: &str, component: Address) -> Option<LinkedList<(u32, Vec<Word>)>> {
     use Address::*;
     let fields = match component {
         BusControl => "",
@@ -43,11 +43,11 @@ pub fn extract_contents(database: &str, component: Address) -> Option<LinkedList
         }
         Ok((time, data))
     });
-    let mut data_vec: LinkedList<(u32, Vec<u16>)> = LinkedList::new();
+    let mut data_vec: LinkedList<(u32, Vec<Word>)> = LinkedList::new();
     let data_iter_unwrap = data_iter.unwrap();
     for entry in data_iter_unwrap {
         match entry {
-            Ok(content) => data_vec.push_back(content),
+            Ok(content) => data_vec.push_back((content.0, (content.1.into_iter().map(Word::new_data).collect()))), // Words are ready to be sent out.
             _ => {},
         }
     }
