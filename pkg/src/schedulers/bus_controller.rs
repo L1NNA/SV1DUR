@@ -177,22 +177,22 @@ impl FighterScheduler {
             Event {source: FlightControls, destination: Ailerons,  priority: VeryHigh, repeating: true,
                 word_count: 8, //4,//float32 for degree on each wing
             },
-            Event {source: FlightControls, destination: Elevators, priority: VeryHigh, repeating: true,
-                word_count: 8, //4,//float32 for degree on each wing
-            },
+            // Event {source: FlightControls, destination: Elevators, priority: VeryHigh, repeating: true,
+            //     word_count: 8, //4,//float32 for degree on each wing
+            // },
             // Event {source: FlightControls, destination: Slats, priority: VeryHigh, repeating: true,
             //     word_count: 4,//float32 for degree on each wing
             // },
-            Event {source: FlightControls, destination: Spoilers,  priority: VeryHigh, repeating: true,
-                word_count: 2, //4,//float32 for degree on each wing
-            },
+            // Event {source: FlightControls, destination: Spoilers,  priority: VeryHigh, repeating: true,
+            //     word_count: 2, //4,//float32 for degree on each wing
+            // },
             // Sensors
             Event {source: Fuel,   destination: FlightControls,    priority: Lowest,   repeating: true,    
                 word_count: 4, //one float32 for quantity, one float32 for flow
             },
-            Event {source: Gyro, destination: FlightControls,    priority: Medium,   repeating: true,    
-                word_count: 10, //one float32 for heading
-            },
+            // Event {source: Gyro, destination: FlightControls,    priority: Medium,   repeating: true,    
+            //     word_count: 10, //one float32 for heading
+            // },
             // Event {source: Altimeter,  destination: FlightControls,    priority: Medium,   repeating: true,    
             //     word_count: 1,
             // },

@@ -59,8 +59,18 @@ pub fn fighter_simulation(w_delays: u128) -> Result<()> {
     // let n_devices = 3;
     // let w_delays = w_delays;
     let database = "sample_data.sqlite";
-    let devices = vec![Address::BusControl, Address::FlightControls, Address::Flaps, Address::Engine, Address::Rudder, Address::Ailerons, 
-                        Address::Elevators, Address::Spoilers, Address::Fuel, Address::Positioning, Address::Gyro, Address::Brakes];
+    let devices = vec![Address::BusControl, 
+                        Address::FlightControls, 
+                        Address::Flaps, 
+                        Address::Engine, 
+                        Address::Rudder, 
+                        Address::Ailerons, 
+                        // Address::Elevators, 
+                        // Address::Spoilers, 
+                        Address::Fuel, 
+                        Address::Positioning, 
+                        // Address::Gyro, 
+                        Address::Brakes];
     let mut sys = System::new(devices.len() as u32, w_delays);
     for m in devices {
         // let (s1, r1) = bounded(64);
