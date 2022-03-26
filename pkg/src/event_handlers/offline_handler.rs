@@ -8,14 +8,14 @@ pub const BROADCAST_ADDRESS: u8 = 31;
 
 #[derive(Clone)]
 pub struct OfflineHandler {
-    pub data: LinkedList<(u32, Vec<Word>)>,
+    pub data: LinkedList<(u32, Vec<u16>)>,
     time_offset: u128,
-    current_data: Option<Vec<Word>>,
+    current_data: Option<Vec<u16>>,
     latest_timestamp: u128,
 }
 
 impl OfflineHandler {
-    pub fn new(data: LinkedList<(u32, Vec<Word>)>) -> OfflineHandler {
+    pub fn new(data: LinkedList<(u32, Vec<u16>)>) -> OfflineHandler {
         let handler = OfflineHandler{data: data, time_offset: 0, current_data: None, latest_timestamp: 0,};
         handler
     }
@@ -37,7 +37,7 @@ impl EventHandler for OfflineHandler {
             }
             d.write(Word::new_status(d.address, d.service_request, d.error_bit));
             for data in self.current_data.as_ref().unwrap() {
-                d.write(*data);
+                d.write(Word::new_data(*data));
             }
         }
         let current_cmds = d.reset_all_stateful();
@@ -47,15 +47,15 @@ impl EventHandler for OfflineHandler {
 
 #[derive(Clone)]
 pub struct OfflineFlightControlsHandler {
-    pub data: LinkedList<(u32, Vec<Word>)>,
+    pub data: LinkedList<(u32, Vec<u16>)>,
     time_offset: u128,
-    current_data: Option<Vec<Word>>,
+    current_data: Option<Vec<u16>>,
     latest_timestamp: u128,
     destination: Option<Address>,
 }
 
 impl OfflineFlightControlsHandler {
-    pub fn new(data: LinkedList<(u32, Vec<Word>)>) -> OfflineFlightControlsHandler {
+    pub fn new(data: LinkedList<(u32, Vec<u16>)>) -> OfflineFlightControlsHandler {
         let handler = OfflineFlightControlsHandler{data: data, time_offset: 0, current_data: None, latest_timestamp: 0, destination: None};
         handler
     }
@@ -128,7 +128,7 @@ impl EventHandler for OfflineFlightControlsHandler {
                 _ => &self.current_data.as_ref().unwrap()[..8]
             };
             for data in slice {
-                d.write(*data);
+                d.write(Word::new_data(*data));
             }
         }
         let current_cmds = d.reset_all_stateful();

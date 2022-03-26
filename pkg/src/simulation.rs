@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::LinkedList;
 
 
-pub fn extract_contents(database: &str, component: Address) -> Option<LinkedList<(u32, Vec<Word>)>> {
+pub fn extract_contents(database: &str, component: Address) -> Option<LinkedList<(u32, Vec<u16>)>> {
     use Address::*;
     let fields = match component {
         BusControl => "",
@@ -43,11 +43,12 @@ pub fn extract_contents(database: &str, component: Address) -> Option<LinkedList
         }
         Ok((time, data))
     });
-    let mut data_vec: LinkedList<(u32, Vec<Word>)> = LinkedList::new();
+    let mut data_vec: LinkedList<(u32, Vec<u16>)> = LinkedList::new();
     let data_iter_unwrap = data_iter.unwrap();
     for entry in data_iter_unwrap {
         match entry {
-            Ok(content) => data_vec.push_back((content.0, (content.1.into_iter().map(Word::new_data).collect()))), // Words are ready to be sent out.
+            Ok(content) => data_vec.push_back(content),
+            // data_vec.push_back((content.0, (content.1.into_iter().map(Word::new_data).collect()))), // Words are ready to be sent out.  This change seems to have slowed things down.  I will investigate further.
             _ => {},
         }
     }
@@ -97,7 +98,7 @@ pub fn fighter_simulation(w_delays: u128) -> Result<()> {
                     AttackType::Benign,
                 );
             }
-        } else {
+        } else {  // m == Address::FlightControls
             let router = Router {
                 // control all communications
                 scheduler: FighterScheduler::new(),
