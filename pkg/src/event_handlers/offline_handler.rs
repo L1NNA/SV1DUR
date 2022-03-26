@@ -26,11 +26,11 @@ impl EventHandler for OfflineHandler {
         // may be triggered after cmd
         d.log(*w, ErrMsg::MsgEntCmdTrx);
         if self.time_offset == 0 {
-            self.time_offset = d.clock.elapsed().as_nanos();
+            self.time_offset = d.clock.elapsed().as_millis();
         }
         if !d.fake {
             d.set_state(State::BusyTrx);
-            let current_time = d.clock.elapsed().as_nanos() - self.time_offset;
+            let current_time = d.clock.elapsed().as_millis() - self.time_offset;
             while self.latest_timestamp < current_time && !self.data.is_empty() {
                 let new_data = self.data.pop_front().unwrap();
                 self.current_data = Some(new_data.1);
