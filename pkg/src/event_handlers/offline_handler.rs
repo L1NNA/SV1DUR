@@ -31,7 +31,7 @@ impl EventHandler for OfflineHandler {
         if !d.fake {
             d.set_state(State::BusyTrx);
             let current_time = d.clock.elapsed().as_millis() - self.time_offset;
-            while self.latest_timestamp < current_time && !self.data.is_empty() {
+            while self.current_data == None || (self.latest_timestamp < current_time && !self.data.is_empty()) {
                 let new_data = self.data.pop_front().unwrap();
                 self.current_data = Some(new_data.1);
             }
