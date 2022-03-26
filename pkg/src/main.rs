@@ -21,7 +21,7 @@ use std::time::{Instant};
 mod schedulers; //::{Address, MsgPri, HercScheduler};
 #[allow(unused_imports)]
 use schedulers::{FighterScheduler, Proto, HercScheduler};
-use primitive_types::{Address, AttackType, Mode, State, Word, ErrMsg};
+use primitive_types::{Address, AttackType, Mode, State, Word, ErrMsg, TR, BROADCAST_ADDRESS};
 use devices::{Device, format_log};
 use simulation::{fighter_simulation, extract_contents};
 use sys::{eval_sys};
@@ -210,8 +210,9 @@ fn main() {
     // unsafe{nice(-20)};
     // #[allow(unused)]
     // let system = eval_sys(0, 4, Proto::RT2RT, true);
-    // fighter_simulation(0);
 
-    test_message_timing();
+    let word_delay = 20_000; // nanoseconds to transmit a word.
+    fighter_simulation(word_delay);
+
 
 }

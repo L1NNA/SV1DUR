@@ -65,7 +65,7 @@ impl Device {
         } else {
             // println!("here {} {} {:?}, {}", self, self.write_queue.len(), self.write_queue.last().unwrap().0, self.write_delays);
             self.write_queue
-                .push((self.write_queue.last().unwrap().0 + 20_000 + self.write_delays, val));
+                .push((self.write_queue.last().unwrap().0 + self.write_delays, val));
         }
         // let transmitters = self.transmitters.clone();
         // let id = self.id.clone();
