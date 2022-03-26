@@ -26,7 +26,7 @@ use devices::{Device, format_log};
 use simulation::{fighter_simulation, extract_contents};
 use sys::{eval_sys};
 use terminals::{ComponentInfo, SplitInt};
-use libc::nice;
+// use libc::nice;
 
 #[allow(unused)]
 fn test_address_functions() {
