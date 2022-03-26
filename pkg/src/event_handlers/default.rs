@@ -74,10 +74,10 @@ pub trait EventHandler: Clone + Send {
                     }
                 }
             }
-            // rt2rt sub destination
-            if w.tr() == TR::Transmit && w.sub_address() == d.address {
-                self.on_cmd_rcv(d, w);
-            }
+            // // rt2rt sub destination
+            // if w.tr() == TR::Transmit && w.sub_address() == d.address {
+            //     self.on_cmd_rcv(d, w);
+            // }
         }
     }
     fn default_on_cmd_trx(&mut self, d: &mut Device, w: &mut Word) {
