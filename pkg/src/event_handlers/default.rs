@@ -74,6 +74,9 @@ pub trait EventHandler: Clone + Send {
                     }
                 }
             }
+            else if w.tr() == TR::Receive {
+                d.ensure_idle();
+            }
             // // rt2rt sub destination
             // if w.tr() == TR::Transmit && w.sub_address() == d.address {
             //     self.on_cmd_rcv(d, w);
@@ -143,7 +146,7 @@ pub trait EventHandler: Clone + Send {
     }
     fn default_on_dat(&mut self, d: &mut Device, w: &mut Word) {
         if d.state == State::AwtData {
-            d.log(*w, ErrMsg::MsgEntDat);
+            d.log(*w, ErrMsg::MsgEntDat(d.dword_count as usize, d.dword_count_expected as usize));
             if d.ccmd == 1 {
                 // TBA:  synchronize clock to data
                 // (clock is u128 but data is not u16..)

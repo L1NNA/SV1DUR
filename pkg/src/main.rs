@@ -88,7 +88,7 @@ fn test_herc_scheduler() {
         clock: Instant::now(),
         logs: Vec::new(),
         transmitters: Vec::new(),
-        read_queue: Vec::new(),
+        read_queue: LinkedList::new(),
         write_queue: LinkedList::new(),
         write_delays: 0,
         receiver: recv,
@@ -126,7 +126,7 @@ fn test_fighter_scheduler() {
         clock: Instant::now(),
         logs: Vec::new(),
         transmitters: Vec::new(),
-        read_queue: Vec::new(),
+        read_queue: LinkedList::new(),
         write_queue: LinkedList::new(),
         write_delays: 0,
         receiver: recv,
@@ -168,7 +168,7 @@ pub fn test_message_timing() {
         clock: Instant::now(),
         transmitters: Vec::new(),
         write_queue: LinkedList::new(),
-        read_queue: Vec::new(),
+        read_queue: LinkedList::new(),
         receiver: recv,
         delta_t_avg: 0,
         delta_t_count: 0,
@@ -212,7 +212,7 @@ fn main() {
     // #[allow(unused)]
     // let system = eval_sys(0, 4, Proto::RT2RT, true);
 
-    let word_delay = 20_500; // nanoseconds to transmit a word.
+    let word_delay = 20_000; // nanoseconds to transmit a word.
     fighter_simulation(word_delay);
 
 

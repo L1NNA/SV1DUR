@@ -38,11 +38,11 @@ pub struct Device {
     pub dword_count_expected: u8,
     pub clock: Instant,
     pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
-    pub transmitters: Vec<Sender<Word>>,
-    pub read_queue: Vec<(u128, Word, bool)>,
+    pub transmitters: Vec<Sender<(u128, Word)>>,
+    pub read_queue: LinkedList<(u128, Word, bool)>,
     pub write_queue: LinkedList<(u128, Word)>,
     pub write_delays: u128,
-    pub receiver: Receiver<Word>,
+    pub receiver: Receiver<(u128, Word)>,
     pub delta_t_avg: u128,
     pub delta_t_start: u128,
     pub delta_t_count: u128,
@@ -80,12 +80,12 @@ impl Device {
         // });
     }
 
-    pub fn read(&self) -> Result<Word, TryRecvError> {
+    pub fn read(&self) -> Result<(u128, Word), TryRecvError> {
         // return self.receiver.recv().unwrap();
         return self.receiver.try_recv();
     }
 
-    pub fn maybe_block_read(&self) -> Result<Word, TryRecvError> {
+    pub fn maybe_block_read(&self) -> Result<(u128, Word), TryRecvError> {
         if self.mode == Mode::BC {
             self.receiver.try_recv()
             // if self.state == State::Idle {
@@ -145,6 +145,12 @@ impl Device {
     pub fn log_merge(&self, log_list: &mut Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>) {
         for l in &self.logs {
             log_list.push(l.clone());
+        }
+    }
+
+    pub fn ensure_idle(&mut self) { // TODO: This shouldn't trip if we just received the "CMD RCV" message
+        if self.state != State::Idle {
+            self.reset_all_stateful();  // TODO: Generate custom log message stating we are out of sync.
         }
     }
 

@@ -46,7 +46,7 @@ bitfield! {
 
 impl fmt::Display for Word {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "w:{:#027b}[{:02}]", self.0, self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
+        write!(f, "w:{:#022b}[{:02}]", self.all(), self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
     }
 }
 
@@ -121,7 +121,7 @@ pub enum ErrMsg {
     MsgEntCmdRcv,
     MsgEntCmdTrx,
     MsgEntCmdMcx,
-    MsgEntDat,
+    MsgEntDat(usize, usize),
     MsgEntSte,
     // dropped status word
     MsgEntSteDrop,
@@ -144,7 +144,7 @@ impl ErrMsg {
             MsgEntCmdRcv => "CMD RCV Received".to_owned(),
             MsgEntCmdTrx => "CMD TRX Received".to_owned(),
             MsgEntCmdMcx => "CMD MCX Received".to_owned(),
-            MsgEntDat => "Data Received".to_owned(),
+            MsgEntDat(recvd, expect) => format!("Data Rcvd:{}/{}", recvd, expect).to_owned(),
             MsgEntSte => "Status Received".to_owned(),
             MsgEntSteDrop => "Status Dropped".to_owned(),
             MsgAttk(msg) => msg.to_owned(),
@@ -213,6 +213,7 @@ impl fmt::Display for State {
 
 #[allow(unused)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
 pub enum Address {
     BusControl,
     FlightControls,

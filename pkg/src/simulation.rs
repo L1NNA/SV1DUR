@@ -73,6 +73,8 @@ pub fn fighter_simulation(w_delays: u128) -> Result<()> {
                         // Address::Gyro, 
                         Address::Brakes];
     let mut sys = System::new(devices.len() as u32, w_delays);
+    let timestamps = extract_contents(database, Address::BusControl).unwrap();
+    let max_timesteps = timestamps.back().unwrap().0;
     for m in devices {
         // let (s1, r1) = bounded(64);
         // s_vec.lock().unwrap().push(s1);
@@ -114,7 +116,7 @@ pub fn fighter_simulation(w_delays: u128) -> Result<()> {
         }
     }
     sys.go();
-    sys.sleep_ms(1000);
+    sys.sleep_ms(max_timesteps as u64);
     sys.stop();
     sys.join();
     Ok(())
