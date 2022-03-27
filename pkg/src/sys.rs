@@ -209,33 +209,9 @@ impl System {
                                 // w_logs.push((entry.1, ErrMsg::MsgWrt));
 
                             }
-                            // for entry in device.write_queue.clone().iter() {
-                            //     // if now it is the time to actually write
-                            //     if entry.0 <= current && time_bus_available <= current {
-                            //         // log can be slower than write ...
-                            //         device.log(entry.1, ErrMsg::MsgWrt(wq));
-                            //         for (i, s) in device.transmitters.iter().enumerate() {
-                            //             if (i as u32) != device.id {
-                            //                 let _e = s.try_send(entry.1);
-                            //                 time_bus_available = current + w_delay;
-                            //                 // s.send(val);
-                            //             }
-                            //         }
-                            //         // w_logs.push((entry.1, ErrMsg::MsgWrt));
-                            //     }
-                            // }
-                            // // for wl in w_logs {
-                            // //     device.log(wl.0, wl.1);
-                            // // }
-                            // // clearing all the data (otherwise delta_t keeps increasing)
-                            // device.write_queue.retain(|x| (*x).0 > current);
-                            // if device.write_queue.len() == 0 {
-                            //     device.number_of_current_cmd = 0;
-                            // }
-                            // device.write_queue.clear();
                         }
 
-                        let word_load_time = 0; //20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
+                        let word_load_time = 20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
                         let mut res: Result<Word, TryRecvError>;
                         // if prev_word.0 == 0 {
                         //     res = device.maybe_block_read(); // Adding this line was marginally faster.  It may slow things down on a more capable computer.
@@ -249,16 +225,14 @@ impl System {
                             } else if current - prev_word.0 < word_load_time {
                                 // collision
                                 let mut w = res.unwrap();
-                                if w.address() == device.address {
-                                    if prev_word.1 {
-                                        // if previous word is a valid message then file parity error
-                                        // if not, the error was already filed.
-                                        local_router
-                                            .handler
-                                            .on_err_parity(&mut device, &mut prev_word.2);
-                                    }
-                                    local_router.handler.on_err_parity(&mut device, &mut w);
+                                if prev_word.1 {
+                                    // if previous word is a valid message then file parity error
+                                    // if not, the error was already filed.
+                                    local_router
+                                        .handler
+                                        .on_err_parity(&mut device, &mut prev_word.2);
                                 }
+                                local_router.handler.on_err_parity(&mut device, &mut w);
                                 // replaced with new timestamp, and invalid message flag (collided)
                                 prev_word = (current, false, w);
                             }
@@ -275,7 +249,7 @@ impl System {
                                     if w.service_request_bit() != 0 {
                                         local_router.scheduler.request_sr(w.address());
                                     }
-                                    if w.message_errorbit() != 0 {
+                                    if w.message_errorbit() != 0{
                                         local_router.scheduler.error_bit();
                                     }
                                 }

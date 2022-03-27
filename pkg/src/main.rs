@@ -212,7 +212,7 @@ fn main() {
     // #[allow(unused)]
     // let system = eval_sys(0, 4, Proto::RT2RT, true);
 
-    let word_delay = 20_000; // nanoseconds to transmit a word.
+    let word_delay = 20_500; // nanoseconds to transmit a word.
     fighter_simulation(word_delay);
 
 

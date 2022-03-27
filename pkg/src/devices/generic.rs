@@ -62,7 +62,7 @@ impl Device {
         }
         if self.write_queue.len() < 1 {
             self.write_queue
-                .push_back((self.clock.elapsed().as_nanos() + self.write_delays, val));
+                .push_back((self.clock.elapsed().as_nanos(), val));
         } else {
             // println!("here {} {} {:?}, {}", self, self.write_queue.len(), self.write_queue.last().unwrap().0, self.write_delays);
             self.write_queue
