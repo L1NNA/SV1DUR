@@ -26,6 +26,7 @@ use devices::{Device, format_log};
 use simulation::{fighter_simulation, extract_contents};
 use sys::{eval_sys};
 use terminals::{ComponentInfo, SplitInt};
+use std::collections::LinkedList;
 // use libc::nice;
 
 #[allow(unused)]
@@ -88,7 +89,7 @@ fn test_herc_scheduler() {
         logs: Vec::new(),
         transmitters: Vec::new(),
         read_queue: Vec::new(),
-        write_queue: Vec::new(),
+        write_queue: LinkedList::new(),
         write_delays: 0,
         receiver: recv,
         delta_t_avg: 0,
@@ -126,7 +127,7 @@ fn test_fighter_scheduler() {
         logs: Vec::new(),
         transmitters: Vec::new(),
         read_queue: Vec::new(),
-        write_queue: Vec::new(),
+        write_queue: LinkedList::new(),
         write_delays: 0,
         receiver: recv,
         delta_t_avg: 0,
@@ -166,7 +167,7 @@ pub fn test_message_timing() {
         dword_count_expected: 0,
         clock: Instant::now(),
         transmitters: Vec::new(),
-        write_queue: Vec::new(),
+        write_queue: LinkedList::new(),
         read_queue: Vec::new(),
         receiver: recv,
         delta_t_avg: 0,

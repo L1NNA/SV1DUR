@@ -2,6 +2,7 @@ use std::fmt;
 use crate::primitive_types::{Mode, State, Word, ErrMsg, AttackType, WRD_EMPTY, TR};
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, RecvError, select, after};
 use std::time::{Duration, Instant};
+use std::collections::LinkedList;
 
 pub const CONFIG_PRINT_LOGS: bool = false;
 
@@ -39,7 +40,7 @@ pub struct Device {
     pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
     pub transmitters: Vec<Sender<Word>>,
     pub read_queue: Vec<(u128, Word, bool)>,
-    pub write_queue: Vec<(u128, Word)>,
+    pub write_queue: LinkedList<(u128, Word)>,
     pub write_delays: u128,
     pub receiver: Receiver<Word>,
     pub delta_t_avg: u128,
@@ -61,11 +62,11 @@ impl Device {
         }
         if self.write_queue.len() < 1 {
             self.write_queue
-                .push((self.clock.elapsed().as_nanos() + self.write_delays, val));
+                .push_back((self.clock.elapsed().as_nanos() + self.write_delays, val));
         } else {
             // println!("here {} {} {:?}, {}", self, self.write_queue.len(), self.write_queue.last().unwrap().0, self.write_delays);
             self.write_queue
-                .push((self.write_queue.last().unwrap().0 + self.write_delays, val));
+                .push_back((self.write_queue.back().unwrap().0 + self.write_delays, val));
         }
         // let transmitters = self.transmitters.clone();
         // let id = self.id.clone();

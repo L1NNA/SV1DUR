@@ -4,7 +4,7 @@ use crate::event_handlers::{EventHandler, DefaultEventHandler};
 use crate::devices::{Device, format_log};
 use crate::schedulers::{DefaultScheduler, Scheduler, Proto};
 use chrono::Utc;
-use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
+use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, select};
 use spin_sleep;
 #[allow(unused)]
 use std::fs::{create_dir, read_dir, File, OpenOptions};
@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+use std::collections::LinkedList;
 
 #[derive(Clone, Debug)]
 pub struct Router<K: Scheduler, V: EventHandler> {
@@ -113,6 +114,7 @@ impl System {
     pub fn sleep_ms(&mut self, ms: u64) {
         thread::sleep(Duration::from_millis(ms));
     }
+
     pub fn run_d<K: Scheduler + 'static, V: EventHandler + 'static>(
         &mut self,
         addr: u8,
@@ -148,7 +150,7 @@ impl System {
             dword_count_expected: 0,
             clock: self.clock,
             transmitters: transmitters,
-            write_queue: Vec::new(),
+            write_queue: LinkedList::new(),
             read_queue: Vec::new(),
             receiver: receiver,
             delta_t_avg: 0,
@@ -174,7 +176,7 @@ impl System {
                 let mut prev_word = (0, false, WRD_EMPTY);
                 // lock the device object - release only after thread shutdown:
                 let mut device = device_mtx_thread_local.lock().unwrap();
-
+                let mut time_bus_available = 0;
                 loop {
                     if !go.load(Ordering::Relaxed) || device.state == State::Off {
                         spin_sleeper.sleep_ns(1000_000);
@@ -193,38 +195,53 @@ impl System {
                         let mut current: u128 = device.clock.elapsed().as_nanos();
                         if wq > 0 {
                             // let mut w_logs = Vec::new();
-                            for entry in device.write_queue.clone().iter() {
-                                // if now it is the time to actually write
-                                if entry.0 <= current {
-                                    // log can be slower than write ...
-                                    device.log(entry.1, ErrMsg::MsgWrt(wq));
-                                    for (i, s) in device.transmitters.iter().enumerate() {
-                                        if (i as u32) != device.id {
-                                            let _e = s.try_send(entry.1);
-                                            // s.send(val);
-                                        }
+                            while device.write_queue.len() > 0 && device.write_queue.front().unwrap().0 <= current && time_bus_available <= current {
+                                let entry = device.write_queue.pop_front().unwrap();
+                                // log can be slower than write ...
+                                device.log(entry.1, ErrMsg::MsgWrt(wq));
+                                for (i, s) in device.transmitters.iter().enumerate() {
+                                    if (i as u32) != device.id {
+                                        let _e = s.try_send(entry.1);
+                                        time_bus_available = current + w_delay;
+                                        // s.send(val);
                                     }
-                                    // w_logs.push((entry.1, ErrMsg::MsgWrt));
                                 }
+                                // w_logs.push((entry.1, ErrMsg::MsgWrt));
+
                             }
-                            // for wl in w_logs {
-                            //     device.log(wl.0, wl.1);
+                            // for entry in device.write_queue.clone().iter() {
+                            //     // if now it is the time to actually write
+                            //     if entry.0 <= current && time_bus_available <= current {
+                            //         // log can be slower than write ...
+                            //         device.log(entry.1, ErrMsg::MsgWrt(wq));
+                            //         for (i, s) in device.transmitters.iter().enumerate() {
+                            //             if (i as u32) != device.id {
+                            //                 let _e = s.try_send(entry.1);
+                            //                 time_bus_available = current + w_delay;
+                            //                 // s.send(val);
+                            //             }
+                            //         }
+                            //         // w_logs.push((entry.1, ErrMsg::MsgWrt));
+                            //     }
                             // }
-                            // clearing all the data (otherwise delta_t keeps increasing)
-                            device.write_queue.retain(|x| (*x).0 > current);
-                            if device.write_queue.len() == 0 {
-                                device.number_of_current_cmd = 0;
-                            }
+                            // // for wl in w_logs {
+                            // //     device.log(wl.0, wl.1);
+                            // // }
+                            // // clearing all the data (otherwise delta_t keeps increasing)
+                            // device.write_queue.retain(|x| (*x).0 > current);
+                            // if device.write_queue.len() == 0 {
+                            //     device.number_of_current_cmd = 0;
+                            // }
                             // device.write_queue.clear();
                         }
 
                         let word_load_time = 0; //20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
                         let mut res: Result<Word, TryRecvError>;
-                        if prev_word.0 == 0 {
-                            res = device.maybe_block_read(); // Adding this line was marginally faster.  It may slow things down on a more capable computer.
-                        } else {
+                        // if prev_word.0 == 0 {
+                        //     res = device.maybe_block_read(); // Adding this line was marginally faster.  It may slow things down on a more capable computer.
+                        // } else {                             // This did slow things down on a faster computer.  By a significant margin.  Likely from context switching.
                             res = device.read();
-                        }
+                        // }
                         if !res.is_err() {
                             if prev_word.0 == 0 {
                                 // empty cache, do replacement
