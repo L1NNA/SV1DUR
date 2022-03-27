@@ -285,7 +285,7 @@ impl Scheduler for FighterScheduler {
                             self.update_priority(Event{source:src, destination: dst, priority: pri, repeating: repeat, word_count: wc}, time);
                         }
                         // d.act_bc2rt(dst as u8, wc); // Can't be wordcount, must be data.  We don't know what data we want to send, that's the Device itself.
-                        let bus_available = current + (2+wc as u128) * 20_000;
+                        let bus_available = current + (2+wc as u128) * 400_000;
                         self.timeout = bus_available;
                         //Some(format!("[{:0>6?}] from {src:?} to {dst:?} with {src:?} as BC\n[{:0>6?}] - message finished\n", current/1000, bus_available/1000))
                     }
@@ -294,7 +294,7 @@ impl Scheduler for FighterScheduler {
                             self.update_priority(Event{source:src, destination: dst, priority: pri, repeating: repeat, word_count: wc}, time);
                         }
                         d.act_rt2bc(src as u8, wc);
-                        let bus_available = current + (2+wc as u128) * 20_000;
+                        let bus_available = current + (2+wc as u128) * 400_000;
                         self.timeout = bus_available;
                         //Some(format!("[{:0>6?}] from {src:?} to {dst:?} with {dst:?} as BC\n[{:0>6?}] - message finished\n", current/1000, bus_available/1000))
                     }
@@ -303,7 +303,7 @@ impl Scheduler for FighterScheduler {
                             self.update_priority(Event{source:src, destination: dst, priority: pri, repeating: repeat, word_count: wc}, time);
                         }
                         d.act_rt2rt(src as u8, dst as u8, wc);
-                        let bus_available = current + (4+wc as u128) * 20_000;
+                        let bus_available = current + (4+wc as u128) * 4_000_000;
                         self.timeout = bus_available;
                         //Some(format!("[{:0>6?}] from {src:?} to {dst:?}\n[{:0>6?}] - message finished\n", current/1000, bus_available/1000))
                     }
@@ -335,6 +335,10 @@ impl Scheduler for FighterScheduler {
             }
             _ => {}
         }
+    }
+
+    fn bus_available(&mut self) -> u128 {
+        self.timeout
     }
 }
 

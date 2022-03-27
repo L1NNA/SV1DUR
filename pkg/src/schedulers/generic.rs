@@ -22,6 +22,8 @@ pub trait Scheduler: Clone + Send {
     fn request_sr(&mut self, terminal: u8) {}
     #[allow(unused)]
     fn error_bit(&mut self) {}
+
+    fn bus_available(&mut self) -> u128 {u128::MAX}
 }
 
 

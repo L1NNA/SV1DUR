@@ -185,6 +185,9 @@ impl System {
                         if device.mode == Mode::BC && device.state == State::Idle {
                             device.log(WRD_EMPTY, ErrMsg::MsgBCReady);
                             local_router.scheduler.on_bc_ready(&mut device);
+                        } else if device.mode == Mode::BC && local_router.scheduler.bus_available() < device.clock.elapsed().as_nanos() {
+                            device.log(WRD_EMPTY, ErrMsg::MsgEmpt);
+                            device.set_state(State::Idle);
                         }
                         // if device.mode == Mode::BC{
                         //     println!("here")
