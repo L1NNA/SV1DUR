@@ -1,5 +1,6 @@
 use crate::primitive_types::{ErrMsg, Word, Mode, State, AttackType, WRD_EMPTY,
-CONFIG_SAVE_DEVICE_LOGS, CONFIG_SAVE_SYS_LOGS, ATK_DEFAULT_DELAYS};
+CONFIG_SAVE_DEVICE_LOGS, CONFIG_SAVE_SYS_LOGS, ATK_DEFAULT_DELAYS,
+WORD_LOAD_TIME, COLLISION_TIME};
 use crate::event_handlers::{EventHandler, DefaultEventHandler};
 use crate::devices::{Device, format_log};
 use crate::schedulers::{DefaultScheduler, Scheduler, Proto};
@@ -183,6 +184,7 @@ impl System {
                 // lock the device object - release only after thread shutdown:
                 let mut device = device_mtx_thread_local.lock().unwrap();
                 let mut time_bus_available = 0;
+                let mut wq = device.write_queue.len();
                 loop {
                     if !go.load(Ordering::Relaxed) || device.state == State::Off {
                         spin_sleeper.sleep_ns(1000_000);
@@ -200,23 +202,22 @@ impl System {
 
                         // write is `asynchrnoized`
                         let mut current: u128 = device.clock.elapsed().as_nanos();
+                        wq = device.write_queue.len();
                         while device.write_queue.len() > 0 && device.write_queue.front().unwrap().0 <= current && time_bus_available <= current {
                             let entry = device.write_queue.pop_front().unwrap();
                             // log can be slower than write ...
                             let wq = device.write_queue.len();
-                            device.log(entry.1, ErrMsg::MsgWrt(wq));
+                            device.log_at(entry.0/1000, entry.1, ErrMsg::MsgWrt(wq));
                             for (i, s) in device.transmitters.iter().enumerate() {
                                 if (i as u32) != device.id {
                                     let _e = s.try_send(entry);
-                                    time_bus_available = current + w_delay;
+                                    // time_bus_available = current + w_delay;
                                     // s.send(val);
                                 }
                             }
                             // w_logs.push((entry.1, ErrMsg::MsgWrt));
                         }
 
-                        let word_load_time = 20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
-                        let collision_time = 20_000;
                         let mut res: Result<(u128, Word), TryRecvError>;
                         // if prev_word.0 == 0 {
                         //     res = device.maybe_block_read(); // Adding this line was marginally faster.  It may slow things down on a more capable computer.
@@ -229,7 +230,7 @@ impl System {
                                 if device.read_queue.is_empty() {
                                     // empty cache, do replacement
                                     device.read_queue.push_back((time, word, true));
-                                } else if time - device.read_queue.back().unwrap().0 < collision_time {
+                                } else if time - device.read_queue.back().unwrap().0 < COLLISION_TIME {
                                     // collision
                                     if device.read_queue.back().unwrap().2 {
                                         // if previous word is a valid message then file parity error
@@ -249,7 +250,7 @@ impl System {
                                 }
                             }
                         }
-                        while !device.read_queue.is_empty() && device.read_queue.front().unwrap().0 <= current - word_load_time {
+                        while !device.read_queue.is_empty() && device.read_queue.front().unwrap().0 <= current - WORD_LOAD_TIME {
                             let (time, mut word, valid) = device.read_queue.pop_front().unwrap();
                             if !valid {
                                 local_router.handler.on_err_parity(&mut device, &mut word);

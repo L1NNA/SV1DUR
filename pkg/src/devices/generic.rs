@@ -142,6 +142,27 @@ impl Device {
         self.logs.push(l);
     }
 
+    pub fn log_at(&mut self, time: u128, word: Word, e: ErrMsg) {
+        let mut avg_delta_t = 0;
+        if self.delta_t_count > 0 {
+            avg_delta_t = self.delta_t_avg / self.delta_t_count;
+        }
+        let l = (
+            time, // .as_nanos(),
+            self.mode,
+            self.id,
+            self.address,
+            self.state,
+            word,
+            e,
+            avg_delta_t,
+        );
+        if CONFIG_PRINT_LOGS {
+            println!("{}", format_log(&l));
+        }
+        self.logs.push(l);
+    }
+
     pub fn log_merge(&self, log_list: &mut Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>) {
         for l in &self.logs {
             log_list.push(l.clone());

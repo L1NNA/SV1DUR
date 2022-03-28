@@ -7,6 +7,8 @@ pub const CONFIG_PRINT_LOGS: bool = false;
 pub const CONFIG_SAVE_DEVICE_LOGS: bool = true;
 pub const CONFIG_SAVE_SYS_LOGS: bool = true;
 pub const BROADCAST_ADDRESS: u8 = 31;
+pub const WORD_LOAD_TIME: u128 = 20_000;
+pub const COLLISION_TIME: u128 = WORD_LOAD_TIME;
 
 bitfield! {
     #[derive(Copy, Clone)]

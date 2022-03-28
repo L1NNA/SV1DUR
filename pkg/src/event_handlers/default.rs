@@ -146,6 +146,7 @@ pub trait EventHandler: Clone + Send {
     }
     fn default_on_dat(&mut self, d: &mut Device, w: &mut Word) {
         if d.state == State::AwtData {
+            d.dword_count += 1;
             d.log(*w, ErrMsg::MsgEntDat(d.dword_count as usize, d.dword_count_expected as usize));
             if d.ccmd == 1 {
                 // TBA:  synchronize clock to data
@@ -153,10 +154,9 @@ pub trait EventHandler: Clone + Send {
                 // maybe set the microscecond component of the clock
                 d.ccmd = 0;
             } else {
-                if d.dword_count < d.dword_count_expected {
+                if d.dword_count <= d.dword_count_expected {
                     d.memory.push(w.data());
                 }
-                d.dword_count += 1;
                 if d.dword_count == d.dword_count_expected {
                     d.set_state(State::BusyTrx);
                     if d.mode != Mode::BC {
