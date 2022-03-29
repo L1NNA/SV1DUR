@@ -229,7 +229,7 @@ impl System {
                                 let (time, mut word) = msg;
                                 if device.read_queue.is_empty() {
                                     // empty cache, do replacement
-                                    if time - time_bus_available < COLLISION_TIME { // We were transmitting when they started
+                                    if (time as i128 - time_bus_available as i128) < COLLISION_TIME as i128 { // We were transmitting when they started
                                         device.read_queue.push_back((time, word, false));
                                     } else {
                                         device.read_queue.push_back((time, word, true));
