@@ -43,12 +43,12 @@ bitfield! {
     pub data, set_data: 18, 3;
     // additional (attack type):
     u32;
-    pub all,_ : 20, 0;
+    pub all,_ : 19, 0;
 }
 
 impl fmt::Display for Word {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "w:{:#022b}[{:02}]", self.all(), self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
+        write!(f, "w:{:#021b}[{:02}]", self.all(), self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
     }
 }
 

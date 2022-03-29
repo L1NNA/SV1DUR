@@ -1,8 +1,5 @@
-use crate::primitive_types::{Word, ErrMsg, State, Mode, TR, WRD_EMPTY};
+use crate::primitive_types::{Word, ErrMsg, State, Mode, TR, WRD_EMPTY, BROADCAST_ADDRESS};
 use crate::devices::Device;
-
-
-pub const BROADCAST_ADDRESS: u8 = 31;
 
 pub trait EventHandler: Clone + Send {
     fn on_wrd_rec(&mut self, d: &mut Device, w: &mut Word) {

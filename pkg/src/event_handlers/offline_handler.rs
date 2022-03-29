@@ -96,10 +96,6 @@ impl EventHandler for OfflineFlightControlsHandler {
                     self.destination = Some(Address::from(w.address()));
                 }
             }
-            // rt2rt sub destination
-            if w.tr() == TR::Transmit && w.sub_address() == d.address {
-                self.on_cmd_rcv(d, w);
-            }
         }
     }
 
