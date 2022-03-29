@@ -203,7 +203,7 @@ impl System {
                         // write is `asynchrnoized`
                         let mut current: u128 = device.clock.elapsed().as_nanos();
                         wq = device.write_queue.len();
-                        while device.write_queue.len() > 0 && device.write_queue.front().unwrap().0 <= current && time_bus_available <= current {
+                        while device.write_queue.len() > 0 && device.write_queue.front().unwrap().0 <= current {
                             let entry = device.write_queue.pop_front().unwrap();
                             // log can be slower than write ...
                             let wq = device.write_queue.len();
@@ -211,7 +211,7 @@ impl System {
                             for (i, s) in device.transmitters.iter().enumerate() {
                                 if (i as u32) != device.id {
                                     let _e = s.try_send(entry);
-                                    // time_bus_available = current + w_delay;
+                                    time_bus_available = entry.0 + w_delay;
                                     // s.send(val);
                                 }
                             }
@@ -229,7 +229,11 @@ impl System {
                                 let (time, mut word) = msg;
                                 if device.read_queue.is_empty() {
                                     // empty cache, do replacement
-                                    device.read_queue.push_back((time, word, true));
+                                    if time - time_bus_available < COLLISION_TIME { // We were transmitting when they started
+                                        device.read_queue.push_back((time, word, false));
+                                    } else {
+                                        device.read_queue.push_back((time, word, true));
+                                    }
                                 } else if time - device.read_queue.back().unwrap().0 < COLLISION_TIME {
                                     // collision
                                     if device.read_queue.back().unwrap().2 {
