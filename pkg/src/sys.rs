@@ -234,7 +234,7 @@ impl System {
                                     } else {
                                         device.read_queue.push_back((time, word, true));
                                     }
-                                } else if time - device.read_queue.back().unwrap().0 < COLLISION_TIME {
+                                } else if (time as i128 - device.read_queue.back().unwrap().0 as i128) < COLLISION_TIME as i128 {
                                     // collision
                                     if device.read_queue.back().unwrap().2 {
                                         // if previous word is a valid message then file parity error
