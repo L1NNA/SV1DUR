@@ -229,12 +229,12 @@ impl System {
                                 let (time, mut word) = msg;
                                 if device.read_queue.is_empty() {
                                     // empty cache, do replacement
-                                    if (time as i128 - time_bus_available as i128) < COLLISION_TIME as i128 { // We were transmitting when they started
+                                    if (time as i128 - time_bus_available as i128) < 0 { // We were transmitting when they started
                                         device.read_queue.push_back((time, word, false));
                                     } else {
                                         device.read_queue.push_back((time, word, true));
                                     }
-                                } else if (time as i128 - device.read_queue.back().unwrap().0 as i128) < COLLISION_TIME as i128 {
+                                } else if time - device.read_queue.back().unwrap().0 < COLLISION_TIME {
                                     // collision
                                     if device.read_queue.back().unwrap().2 {
                                         // if previous word is a valid message then file parity error

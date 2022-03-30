@@ -48,7 +48,8 @@ bitfield! {
 
 impl fmt::Display for Word {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "w:{:#021b}[{:02}]", self.all(), self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
+        write!(f, "w:{:#027b}[{:02}]", self.all(), self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
+        // We need to print all 27 bits.  Binary printing only supports padding, not "width", so we can't hide the 1s, only the 0s.
     }
 }
 
