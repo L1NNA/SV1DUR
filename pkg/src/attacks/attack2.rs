@@ -43,6 +43,7 @@ impl EventHandler for CollisionAttackAgainstAnRT {
         }
         self.default_on_cmd(d, w);
     }
+    
     fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
         if w.address() == self.target && self.target_found {
             d.log(
@@ -59,6 +60,7 @@ impl EventHandler for CollisionAttackAgainstAnRT {
         }
         self.default_on_dat(d, w);
     }
+
     fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
         if w.address() == self.target {
             d.log(
