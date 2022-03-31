@@ -1,8 +1,5 @@
-use crate::primitive_types::{Word, ErrMsg, State, Mode, TR, WRD_EMPTY};
+use crate::primitive_types::{Word, ErrMsg, State, Mode, TR, WRD_EMPTY, BROADCAST_ADDRESS};
 use crate::devices::Device;
-
-
-pub const BROADCAST_ADDRESS: u8 = 31;
 
 pub trait EventHandler: Clone + Send {
     fn on_wrd_rec(&mut self, d: &mut Device, w: &mut Word) {
@@ -74,10 +71,13 @@ pub trait EventHandler: Clone + Send {
                     }
                 }
             }
-            // rt2rt sub destination
-            if w.tr() == TR::Transmit && w.sub_address() == d.address {
-                self.on_cmd_rcv(d, w);
+            else if w.tr() == TR::Receive {
+                d.ensure_idle();
             }
+            // // rt2rt sub destination
+            // if w.tr() == TR::Transmit && w.sub_address() == d.address {
+            //     self.on_cmd_rcv(d, w);
+            // }
         }
     }
     fn default_on_cmd_trx(&mut self, d: &mut Device, w: &mut Word) {
@@ -87,7 +87,7 @@ pub trait EventHandler: Clone + Send {
             d.set_state(State::BusyTrx);
             d.write(Word::new_status(d.address, d.service_request, d.error_bit));
             for i in 0..w.dword_count() {
-                d.write(Word::new_data((i + 1) as u32));
+                d.write(Word::new_data((i + 1) as u16));
             }
         }
         let current_cmds = d.reset_all_stateful();
@@ -143,17 +143,17 @@ pub trait EventHandler: Clone + Send {
     }
     fn default_on_dat(&mut self, d: &mut Device, w: &mut Word) {
         if d.state == State::AwtData {
-            d.log(*w, ErrMsg::MsgEntDat);
+            d.dword_count += 1;
+            d.log(*w, ErrMsg::MsgEntDat(d.dword_count as usize, d.dword_count_expected as usize));
             if d.ccmd == 1 {
                 // TBA:  synchronize clock to data
                 // (clock is u128 but data is not u16..)
                 // maybe set the microscecond component of the clock
                 d.ccmd = 0;
             } else {
-                if d.dword_count < d.dword_count_expected {
+                if d.dword_count <= d.dword_count_expected {
                     d.memory.push(w.data());
                 }
-                d.dword_count += 1;
                 if d.dword_count == d.dword_count_expected {
                     d.set_state(State::BusyTrx);
                     if d.mode != Mode::BC {

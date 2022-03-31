@@ -47,14 +47,17 @@ impl DataCorruptionAttack {
             if l.6 == ErrMsg::MsgBCReady {
                 recieved_faked = 0;
             }
-            if l.6 == ErrMsg::MsgEntDat
-                && l.5.attk() == (AttackType::AtkDataCorruptionAttack as u32)
-            {
-                // println!("{} {}/{}", format_log(&l), recieved_faked, self.word_count);
-                recieved_faked += 1;
-                if recieved_faked == self.word_count {
-                    return true;
-                }
+            match l.6 {
+                ErrMsg::MsgEntDat(_, _) => { 
+                    if l.5.attk() == (AttackType::AtkDataCorruptionAttack as u8) {
+                        // println!("{} {}/{}", format_log(&l), recieved_faked, self.word_count);
+                        recieved_faked += 1;
+                        if recieved_faked == self.word_count {
+                            return true;
+                        }
+                    }
+                },
+                _ => {}
             }
         }
         return false;

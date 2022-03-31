@@ -1,10 +1,11 @@
 use crate::primitive_types::{ErrMsg, Word, Mode, State, AttackType, WRD_EMPTY,
-CONFIG_SAVE_DEVICE_LOGS, CONFIG_SAVE_SYS_LOGS, ATK_DEFAULT_DELAYS};
+CONFIG_SAVE_DEVICE_LOGS, CONFIG_SAVE_SYS_LOGS, ATK_DEFAULT_DELAYS,
+WORD_LOAD_TIME, COLLISION_TIME};
 use crate::event_handlers::{EventHandler, DefaultEventHandler};
 use crate::devices::{Device, format_log};
 use crate::schedulers::{DefaultScheduler, Scheduler, Proto};
 use chrono::Utc;
-use crossbeam_channel::{bounded, Receiver, Sender};
+use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, select, Select, TryRecvError::Empty};
 use spin_sleep;
 #[allow(unused)]
 use std::fs::{create_dir, read_dir, File, OpenOptions};
@@ -16,6 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+use std::collections::LinkedList;
 
 #[derive(Clone, Debug)]
 pub struct Router<K: Scheduler, V: EventHandler> {
@@ -26,8 +28,8 @@ pub struct Router<K: Scheduler, V: EventHandler> {
 pub struct System {
     pub n_devices: u32,
     pub max_devices: u32,
-    pub transmitters: Vec<Sender<Word>>,
-    pub receivers: Vec<Receiver<Word>>,
+    pub transmitters: Vec<Sender<(u128, Word)>>,
+    pub receivers: Vec<Receiver<(u128, Word)>>,
     pub clock: Instant,
     pub go: Arc<AtomicBool>,
     pub exit: Arc<AtomicBool>,
@@ -92,8 +94,11 @@ impl System {
 
         // println!("Merging logs...");
         for device_mx in &self.devices {
-            let device = device_mx.lock().unwrap();
-            device.log_merge(&mut self.logs);
+            let device = device_mx.lock();
+            match device {
+                Ok(device) => device.log_merge(&mut self.logs),
+                Err(_) => println!("Error flushing log on device"),
+            }
         }
 
         self.logs.sort_by_key(|k| k.0);
@@ -113,6 +118,7 @@ impl System {
     pub fn sleep_ms(&mut self, ms: u64) {
         thread::sleep(Duration::from_millis(ms));
     }
+
     pub fn run_d<K: Scheduler + 'static, V: EventHandler + 'static>(
         &mut self,
         addr: u8,
@@ -148,8 +154,8 @@ impl System {
             dword_count_expected: 0,
             clock: self.clock,
             transmitters: transmitters,
-            write_queue: Vec::new(),
-            read_queue: Vec::new(),
+            write_queue: LinkedList::new(),
+            read_queue: LinkedList::new(),
             receiver: receiver,
             delta_t_avg: 0,
             delta_t_count: 0,
@@ -165,6 +171,9 @@ impl System {
         let device_mtx_thread_local = device_mtx.clone();
         let device_router = Arc::clone(&router);
         self.devices.push(device_mtx.clone());
+        let temp_mtx = device_mtx.clone();
+        let mut temp_dev = temp_mtx.lock().unwrap();
+        temp_dev.log(WRD_EMPTY, ErrMsg::MsgAttk("Thread starting".to_string()));
         let h = thread::Builder::new()
             .name(format!("{}", device_name).to_string())
             .spawn(move || {
@@ -174,95 +183,99 @@ impl System {
                 let mut prev_word = (0, false, WRD_EMPTY);
                 // lock the device object - release only after thread shutdown:
                 let mut device = device_mtx_thread_local.lock().unwrap();
-
+                let mut time_bus_available = 0;
+                let mut wq = device.write_queue.len();
                 loop {
                     if !go.load(Ordering::Relaxed) || device.state == State::Off {
                         spin_sleeper.sleep_ns(1000_000);
                     }
                     if device.state != State::Off {
-                        if device.mode == Mode::BC && device.state == State::Idle {
-                            device.log(WRD_EMPTY, ErrMsg::MsgBCReady);
-                            local_router.scheduler.on_bc_ready(&mut device);
+                        if device.mode == Mode::BC {
+                            if device.state == State::Idle {
+                                device.log(WRD_EMPTY, ErrMsg::MsgBCReady);
+                                local_router.scheduler.on_bc_ready(&mut device);
+                            } else if local_router.scheduler.bus_available() < device.clock.elapsed().as_nanos() {
+                                device.log(WRD_EMPTY, ErrMsg::MsgAttk("timeout reached".to_string()));
+                                device.set_state(State::Idle);
+                            }
                         }
-                        // if device.mode == Mode::BC{
-                        //     println!("here")
-                        // }
 
                         // write is `asynchrnoized`
-                        let wq = device.write_queue.len();
-                        let current = device.clock.elapsed().as_nanos();
-                        if wq > 0 {
-                            // let mut w_logs = Vec::new();
-                            for entry in device.write_queue.clone().iter() {
-                                // if now it is the time to actually write
-                                if entry.0 <= current {
-                                    // log can be slower than write ...
-                                    device.log(entry.1, ErrMsg::MsgWrt(wq));
-                                    for (i, s) in device.transmitters.iter().enumerate() {
-                                        if (i as u32) != device.id {
-                                            let _e = s.try_send(entry.1);
-                                            // s.send(val);
-                                        }
-                                    }
-                                    // w_logs.push((entry.1, ErrMsg::MsgWrt));
+                        let mut current: u128 = device.clock.elapsed().as_nanos();
+                        wq = device.write_queue.len();
+                        while device.write_queue.len() > 0 && device.write_queue.front().unwrap().0 <= current {
+                            let entry = device.write_queue.pop_front().unwrap();
+                            // log can be slower than write ...
+                            let wq = device.write_queue.len();
+                            device.log_at(entry.0/1000, entry.1, ErrMsg::MsgWrt(wq));
+                            for (i, s) in device.transmitters.iter().enumerate() {
+                                if (i as u32) != device.id {
+                                    let _e = s.try_send(entry);
+                                    time_bus_available = entry.0 + w_delay;
+                                    // s.send(val);
                                 }
                             }
-                            // for wl in w_logs {
-                            //     device.log(wl.0, wl.1);
-                            // }
-                            // clearing all the data (otherwise delta_t keeps increasing)
-                            device.write_queue.retain(|x| (*x).0 > current);
-                            if device.write_queue.len() == 0 {
-                                device.number_of_current_cmd = 0;
-                            }
-                            // device.write_queue.clear();
+                            // w_logs.push((entry.1, ErrMsg::MsgWrt));
                         }
 
-                        let word_load_time = 0; //20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
-                        let res = device.read();
-                        if !res.is_err() {
-                            if prev_word.0 == 0 {
-                                // empty cache, do replacement
-                                prev_word = (current, true, res.unwrap());
-                            } else if current - prev_word.0 < word_load_time {
-                                // collision
-                                let mut w = res.unwrap();
-                                if w.address() == device.address {
-                                    if prev_word.1 {
+                        let mut res: Result<(u128, Word), TryRecvError>;
+                        // if prev_word.0 == 0 {
+                        //     res = device.maybe_block_read(); // Adding this line was marginally faster.  It may slow things down on a more capable computer.
+                        // } else {                             // This did slow things down on a faster computer.  By a significant margin.  Likely from context switching.
+                            res = device.read();
+                        // }
+                        match res {
+                            Ok(mut msg) => {
+                                let (time, mut word) = msg;
+                                if device.read_queue.is_empty() {
+                                    // empty cache, do replacement
+                                    if (time as i128 - time_bus_available as i128) < 0 { // We were transmitting when they started
+                                        device.read_queue.push_back((time, word, false));
+                                    } else {
+                                        device.read_queue.push_back((time, word, true));
+                                    }
+                                } else if time - device.read_queue.back().unwrap().0 < COLLISION_TIME {
+                                    // collision
+                                    if device.read_queue.back().unwrap().2 {
                                         // if previous word is a valid message then file parity error
                                         // if not, the error was already filed.
-                                        local_router
-                                            .handler
-                                            .on_err_parity(&mut device, &mut prev_word.2);
+                                        device.read_queue.back_mut().unwrap().2 = false;
                                     }
-                                    local_router.handler.on_err_parity(&mut device, &mut w);
+                                    // local_router.handler.on_err_parity(&mut device, &mut w);
+                                    // replaced with new timestamp, and invalid message flag (collided)
+                                    device.read_queue.push_back((time, word, false));
+                                } else {
+                                    device.read_queue.push_back((time, word, true));
                                 }
-                                // replaced with new timestamp, and invalid message flag (collided)
-                                prev_word = (current, false, w);
+                            },
+                            Err(msg) => {
+                                if msg != TryRecvError::Empty {
+                                    device.log(WRD_EMPTY, ErrMsg::MsgAttk("ReadErr".to_string()));
+                                }
                             }
                         }
-                        if prev_word.1 && current >= prev_word.0 + word_load_time {
-                            // message in the cache is valid & after word_time . processe the word.
-                            let mut w = prev_word.2;
-                            if w.sync() == 1 {
-                                if w.instrumentation_bit() == 1 {
-                                    local_router.handler.on_cmd(&mut device, &mut w)
+                        while !device.read_queue.is_empty() && device.read_queue.front().unwrap().0 <= current - WORD_LOAD_TIME {
+                            let (time, mut word, valid) = device.read_queue.pop_front().unwrap();
+                            if !valid {
+                                local_router.handler.on_err_parity(&mut device, &mut word);
+                            } else if word.sync() == 1 {
+                                // device.ensure_idle();
+                                if word.instrumentation_bit() == 1 {
+                                    local_router.handler.on_cmd(&mut device, &mut word)
                                 } else {
                                     // status word
-                                    local_router.handler.on_sts(&mut device, &mut w);
-                                    if w.service_request_bit() != 0 {
-                                        local_router.scheduler.request_sr(w.address());
+                                    local_router.handler.on_sts(&mut device, &mut word);
+                                    if word.service_request_bit() != 0 {
+                                        local_router.scheduler.request_sr(word.address());
                                     }
-                                    if w.message_errorbit() != 0 {
+                                    if word.message_errorbit() != 0{
                                         local_router.scheduler.error_bit();
                                     }
                                 }
                             } else {
                                 // data word
-                                local_router.handler.on_dat(&mut device, &mut w);
+                                local_router.handler.on_dat(&mut device, &mut word);
                             }
-                            // clear cache
-                            prev_word = (0, false, WRD_EMPTY);
                         }
                     }
                     if exit.load(Ordering::Relaxed) {

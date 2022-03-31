@@ -37,7 +37,7 @@ impl FakeStatusTrcmd {
             // dropped message during attack session
             if attk_session {
                 if l.6 == ErrMsg::MsgEntSteDrop {
-                    if l.5.attk() == (AttackType::AtkFakeStatusTrcmd as u32) {
+                    if l.5.attk() == (AttackType::AtkFakeStatusTrcmd as u8) {
                         return false;
                     } else {
                         return true;

@@ -22,6 +22,8 @@ pub trait Scheduler: Clone + Send {
     fn request_sr(&mut self, terminal: u8) {}
     #[allow(unused)]
     fn error_bit(&mut self) {}
+
+    fn bus_available(&mut self) -> u128 {u128::MAX}
 }
 
 
@@ -32,7 +34,7 @@ pub struct DefaultScheduler {
     // data: Vec<u32>
     pub total_device: u8,
     pub target: u8,
-    pub data: Vec<u32>,
+    pub data: Vec<u16>,
     pub proto: Proto,
     pub proto_rotate: bool,
 }

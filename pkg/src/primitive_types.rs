@@ -7,6 +7,8 @@ pub const CONFIG_PRINT_LOGS: bool = false;
 pub const CONFIG_SAVE_DEVICE_LOGS: bool = true;
 pub const CONFIG_SAVE_SYS_LOGS: bool = true;
 pub const BROADCAST_ADDRESS: u8 = 31;
+pub const WORD_LOAD_TIME: u128 = 20_000;
+pub const COLLISION_TIME: u128 = WORD_LOAD_TIME;
 
 bitfield! {
     #[derive(Copy, Clone)]
@@ -36,16 +38,18 @@ bitfield! {
     pub dword_count, set_dword_count: 18, 14;
     pub mode_code, set_mode_code: 18, 14;
     // for data word
-    u32;
-    pub all,_ : 20, 0;
+    pub attk, set_attk: 24,21;
+    u16;
     pub data, set_data: 18, 3;
     // additional (attack type):
-    pub attk, set_attk: 24,21;
+    u32;
+    pub all,_ : 19, 0;
 }
 
 impl fmt::Display for Word {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "w:{:#027b}[{:02}]", self.0, self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
+        write!(f, "w:{:#027b}[{:02}]", self.all(), self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
+        // We need to print all 27 bits.  Binary printing only supports padding, not "width", so we can't hide the 1s, only the 0s.
     }
 }
 
@@ -68,9 +72,9 @@ impl Word {
         return w;
     }
 
-    pub fn new_data(val: u32) -> Word {
+    pub fn new_data(val: u16) -> Word {
         let mut w = Word { 0: 0 };
-        w.set_data(val as u32);
+        w.set_data(val);
         w.calculate_parity_bit();
         return w;
     }
@@ -120,7 +124,7 @@ pub enum ErrMsg {
     MsgEntCmdRcv,
     MsgEntCmdTrx,
     MsgEntCmdMcx,
-    MsgEntDat,
+    MsgEntDat(usize, usize),
     MsgEntSte,
     // dropped status word
     MsgEntSteDrop,
@@ -143,7 +147,7 @@ impl ErrMsg {
             MsgEntCmdRcv => "CMD RCV Received".to_owned(),
             MsgEntCmdTrx => "CMD TRX Received".to_owned(),
             MsgEntCmdMcx => "CMD MCX Received".to_owned(),
-            MsgEntDat => "Data Received".to_owned(),
+            MsgEntDat(recvd, expect) => format!("Data Rcvd:{}/{}", recvd, expect).to_owned(),
             MsgEntSte => "Status Received".to_owned(),
             MsgEntSteDrop => "Status Dropped".to_owned(),
             MsgAttk(msg) => msg.to_owned(),
@@ -212,6 +216,7 @@ impl fmt::Display for State {
 
 #[allow(unused)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
 pub enum Address {
     BusControl,
     FlightControls,

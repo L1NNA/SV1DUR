@@ -1,7 +1,8 @@
 use std::fmt;
 use crate::primitive_types::{Mode, State, Word, ErrMsg, AttackType, WRD_EMPTY, TR};
-use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
+use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, RecvError, select, after};
 use std::time::{Duration, Instant};
+use std::collections::LinkedList;
 
 pub const CONFIG_PRINT_LOGS: bool = false;
 
@@ -28,7 +29,7 @@ pub struct Device {
     pub state: State,
     pub error_bit: bool,
     pub service_request: bool,
-    pub memory: Vec<u32>,
+    pub memory: Vec<u16>,
     pub number_of_current_cmd: u8,
     pub in_brdcst: bool,
     pub address: u8,
@@ -37,11 +38,11 @@ pub struct Device {
     pub dword_count_expected: u8,
     pub clock: Instant,
     pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
-    pub transmitters: Vec<Sender<Word>>,
-    pub read_queue: Vec<(u128, Word, bool)>,
-    pub write_queue: Vec<(u128, Word)>,
+    pub transmitters: Vec<Sender<(u128, Word)>>,
+    pub read_queue: LinkedList<(u128, Word, bool)>,
+    pub write_queue: LinkedList<(u128, Word)>,
     pub write_delays: u128,
-    pub receiver: Receiver<Word>,
+    pub receiver: Receiver<(u128, Word)>,
     pub delta_t_avg: u128,
     pub delta_t_start: u128,
     pub delta_t_count: u128,
@@ -57,15 +58,15 @@ impl Device {
         //     }
         // }
         if self.fake {
-            val.set_attk(self.atk_type as u32);
+            val.set_attk(self.atk_type as u8);
         }
         if self.write_queue.len() < 1 {
             self.write_queue
-                .push((self.clock.elapsed().as_nanos() + self.write_delays, val));
+                .push_back((self.clock.elapsed().as_nanos(), val));
         } else {
             // println!("here {} {} {:?}, {}", self, self.write_queue.len(), self.write_queue.last().unwrap().0, self.write_delays);
             self.write_queue
-                .push((self.write_queue.last().unwrap().0 + 20_000 + self.write_delays, val));
+                .push_back((self.write_queue.back().unwrap().0 + self.write_delays, val));
         }
         // let transmitters = self.transmitters.clone();
         // let id = self.id.clone();
@@ -79,9 +80,31 @@ impl Device {
         // });
     }
 
-    pub fn read(&self) -> Result<Word, TryRecvError> {
+    pub fn read(&self) -> Result<(u128, Word), TryRecvError> {
         // return self.receiver.recv().unwrap();
         return self.receiver.try_recv();
+    }
+
+    pub fn maybe_block_read(&self) -> Result<(u128, Word), TryRecvError> {
+        if self.mode == Mode::BC {
+            self.receiver.try_recv()
+            // if self.state == State::Idle {
+            //     self.receiver.try_recv()
+            // } else {
+            //     select! {  // This made this so much worse
+            //         recv(self.receiver) -> message => match message{Ok(word) => Ok(word), Err(_) => Err(TryRecvError::Empty)},
+            //         recv(after(Duration::from_nanos(14))) -> _ => Err(TryRecvError::Empty),
+            //     }
+            // }
+        } else if [State::Idle, State::AwtData].contains(&self.state) {
+            self.receiver.try_recv()
+        } else {
+            let message = self.receiver.recv();
+            match message {
+                Ok(word) => Ok(word),
+                Err(_) => Err(TryRecvError::Empty),
+            }
+        }
     }
 
     pub fn reset_all_stateful(&mut self) -> u8 {
@@ -104,7 +127,28 @@ impl Device {
             avg_delta_t = self.delta_t_avg / self.delta_t_count;
         }
         let l = (
-            self.clock.elapsed().as_micros(),
+            self.clock.elapsed().as_micros(), // .as_nanos(),
+            self.mode,
+            self.id,
+            self.address,
+            self.state,
+            word,
+            e,
+            avg_delta_t,
+        );
+        if CONFIG_PRINT_LOGS {
+            println!("{}", format_log(&l));
+        }
+        self.logs.push(l);
+    }
+
+    pub fn log_at(&mut self, time: u128, word: Word, e: ErrMsg) {
+        let mut avg_delta_t = 0;
+        if self.delta_t_count > 0 {
+            avg_delta_t = self.delta_t_avg / self.delta_t_count;
+        }
+        let l = (
+            time, // .as_nanos(),
             self.mode,
             self.id,
             self.address,
@@ -125,12 +169,18 @@ impl Device {
         }
     }
 
+    pub fn ensure_idle(&mut self) { // TODO: This shouldn't trip if we just received the "CMD RCV" message
+        if self.state != State::Idle {
+            self.reset_all_stateful();  // TODO: Generate custom log message stating we are out of sync.
+        }
+    }
+
     pub fn set_state(&mut self, state: State) {
         self.state = state;
         self.log(WRD_EMPTY, ErrMsg::MsgStaChg(self.write_queue.len()));
     }
 
-    pub fn act_bc2rt(&mut self, dest: u8, data: &Vec<u32>) {
+    pub fn act_bc2rt(&mut self, dest: u8, data: &Vec<u16>) {
         self.set_state(State::BusyTrx);
         self.write(Word::new_cmd(dest, data.len() as u8, TR::Receive));
         for d in data {
@@ -160,6 +210,7 @@ impl Device {
         self.set_state(State::AwtStsTrxR2B(src));
         self.delta_t_start = self.clock.elapsed().as_nanos();
     }
+    
     pub fn act_rt2rt(&mut self, src: u8, dst: u8, dword_count: u8) {
         self.set_state(State::BusyTrx);
         self.write(Word::new_cmd(dst, dword_count, TR::Receive));

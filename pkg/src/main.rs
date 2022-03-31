@@ -6,6 +6,7 @@ mod simulation;
 mod primitive_types;
 mod event_handlers;
 mod devices;
+mod terminals;
 #[allow(unused)]
 use risk::eval_all;
 #[allow(unused_imports)]
@@ -20,10 +21,13 @@ use std::time::{Instant};
 mod schedulers; //::{Address, MsgPri, HercScheduler};
 #[allow(unused_imports)]
 use schedulers::{FighterScheduler, Proto, HercScheduler};
-use primitive_types::{Address, AttackType, Mode, State};
-use devices::Device;
-use simulation::fighter_simulation;
+use primitive_types::{Address, AttackType, Mode, State, Word, ErrMsg, TR, BROADCAST_ADDRESS};
+use devices::{Device, format_log};
+use simulation::{fighter_simulation, extract_contents};
 use sys::{eval_sys};
+use terminals::{ComponentInfo, SplitInt};
+use std::collections::LinkedList;
+// use libc::nice;
 
 #[allow(unused)]
 fn test_address_functions() {
@@ -84,8 +88,8 @@ fn test_herc_scheduler() {
         clock: Instant::now(),
         logs: Vec::new(),
         transmitters: Vec::new(),
-        read_queue: Vec::new(),
-        write_queue: Vec::new(),
+        read_queue: LinkedList::new(),
+        write_queue: LinkedList::new(),
         write_delays: 0,
         receiver: recv,
         delta_t_avg: 0,
@@ -122,8 +126,8 @@ fn test_fighter_scheduler() {
         clock: Instant::now(),
         logs: Vec::new(),
         transmitters: Vec::new(),
-        read_queue: Vec::new(),
-        write_queue: Vec::new(),
+        read_queue: LinkedList::new(),
+        write_queue: LinkedList::new(),
         write_delays: 0,
         receiver: recv,
         delta_t_avg: 0,
@@ -141,6 +145,48 @@ fn test_fighter_scheduler() {
 
     }
     // println!("{}", output);
+}
+
+pub fn test_message_timing() {
+    let (_trans, recv) = bounded(512);
+    let mut device_obj = Device {
+        fake: false,
+        atk_type: AttackType::Benign,
+        ccmd: 0,
+        state: State::Idle,
+        error_bit: false,
+        service_request: false,
+        mode: Mode::RT,
+        memory: Vec::new(),
+        logs: Vec::new(),
+        number_of_current_cmd: 0,
+        in_brdcst: false,
+        address: Address::FlightControls as u8,
+        id: Address::FlightControls as u32,
+        dword_count: 0,
+        dword_count_expected: 0,
+        clock: Instant::now(),
+        transmitters: Vec::new(),
+        write_queue: LinkedList::new(),
+        read_queue: LinkedList::new(),
+        receiver: recv,
+        delta_t_avg: 0,
+        delta_t_count: 0,
+        delta_t_start: 0,
+        write_delays: 0,
+    };
+    let state_start = device_obj.clock.elapsed().as_nanos();
+    device_obj.set_state(State::Idle);
+    let state_end = device_obj.clock.elapsed().as_nanos();
+    let mut logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)> = Vec::new();
+    let start = device_obj.clock.elapsed().as_nanos();
+    device_obj.act_rt2rt(1, 4, 18);
+    let end = device_obj.clock.elapsed().as_nanos();
+    println!("State change execution time: {:}-{:}={:}", state_end, state_start, state_end-state_start);
+    println!("rt2rt execution time: {:}-{:}={:}", end, start, end-start);
+    for log_entry in device_obj.logs {
+        println!("{:}", format_log(&log_entry));
+    }
 }
 
 fn main() {
@@ -162,8 +208,12 @@ fn main() {
     // test_herc_scheduler();
 
     // test_fighter_scheduler();
-
-    #[allow(unused)]
+    // unsafe{nice(-20)};
+    // #[allow(unused)]
     // let system = eval_sys(0, 4, Proto::RT2RT, true);
-    fighter_simulation(4, 20);
+
+    let word_delay = 20_000; // nanoseconds to transmit a word.
+    fighter_simulation(word_delay);
+
+
 }
