@@ -1,6 +1,6 @@
 use crate::sys::{
-    AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
-    Router, System, Word, WRD_EMPTY, TR
+    AttackType, DefaultBCEventHandler, DefaultEventHandler, Device, ErrMsg, EventHandler,
+    EventHandlerEmitter, Mode, Proto, System, Word, TR, WRD_EMPTY,
 };
 use std::sync::{Arc, Mutex};
 
@@ -35,6 +35,9 @@ impl DesynchronizationAttackOnRT {
 }
 
 impl EventHandler for DesynchronizationAttackOnRT {
+    fn get_attk_type(&self) -> AttackType {
+        AttackType::AtkDesynchronizationAttackOnRT
+    }
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         // This function replaces "find_RT_tcmd" and "find_RT_rcmd" from Michael's code
         // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
@@ -99,60 +102,46 @@ pub fn test_attack8() {
 
     // the last device is kept for attacker
     for m in 0..n_devices - 1 {
-        let default_router = Router {
-            // control all communications (bc only)
-            scheduler: DefaultScheduler {
-                total_device: n_devices - 1,
-                target: 0,
-                data: vec![1, 2, 3],
-                proto: Proto::BC2RT,
-                proto_rotate: true,
-            },
-            // control device-level response
-            handler: DefaultEventHandler {},
-        };
-
         if m == 0 {
             sys.run_d(
                 m as u8,
                 Mode::BC,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultBCEventHandler {
+                        total_device: n_devices - 1,
+                        target: 0,
+                        data: vec![1, 2, 3],
+                        proto: Proto::BC2RT,
+                        proto_rotate: true,
+                    }),
+                })),
+                false,
             );
         } else {
             sys.run_d(
                 m as u8,
                 Mode::RT,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultEventHandler {}),
+                })),
+                false,
             );
         }
     }
-    let attacker_router = Router {
-        // control all communications (bc only)
-        scheduler: DefaultScheduler {
-            total_device: n_devices - 1,
-            target: 0,
-            data: vec![1, 2, 3],
-            proto: Proto::BC2RT,
-            proto_rotate: true,
-        },
-        // control device-level response
-        handler: DesynchronizationAttackOnRT {
-            attack_times: Vec::new(),
-            word_count: 0u8,
-            success: false,
-            flag: 0,
-            target: 4, // attacking RT address @4
-            target_found: false,
-        },
-    };
-
     sys.run_d(
         n_devices - 1,
         Mode::RT,
-        Arc::new(Mutex::new(attacker_router)),
-        AttackType::AtkDesynchronizationAttackOnRT,
+        Arc::new(Mutex::new(EventHandlerEmitter {
+            handler: Box::new(DesynchronizationAttackOnRT {
+                attack_times: Vec::new(),
+                word_count: 0u8,
+                success: false,
+                flag: 0,
+                target: 4, // attacking RT address @4
+                target_found: false,
+            }),
+        })),
+        true,
     );
     sys.go();
     sys.sleep_ms(10);

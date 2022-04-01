@@ -1,6 +1,6 @@
 use crate::sys::{
-    AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
-    Router, System, Word, WRD_EMPTY,
+    AttackType, DefaultBCEventHandler, DefaultEventHandler, Device, ErrMsg, EventHandler,
+    EventHandlerEmitter, Mode, Proto, System, Word, WRD_EMPTY,
 };
 use std::sync::{Arc, Mutex};
 
@@ -29,6 +29,9 @@ impl CollisionAttackAgainstTheBus {
 }
 
 impl EventHandler for CollisionAttackAgainstTheBus {
+    fn get_attk_type(&self) -> AttackType {
+        AttackType::AtkCollisionAttackAgainstTheBus
+    }
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         d.log(
             *w,
@@ -65,57 +68,43 @@ pub fn test_attack1() {
 
     // the last device is kept for attacker
     for m in 0..n_devices - 1 {
-        let default_router = Router {
-            // control all communications (bc only)
-            scheduler: DefaultScheduler {
-                total_device: n_devices - 1,
-                target: 0,
-                data: vec![1, 2, 3],
-                proto: Proto::BC2RT,
-                proto_rotate: true,
-            },
-            // control device-level response
-            handler: DefaultEventHandler {},
-        };
-
         if m == 0 {
             sys.run_d(
                 m as u8,
                 Mode::BC,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultBCEventHandler {
+                        total_device: n_devices - 1,
+                        target: 0,
+                        data: vec![1, 2, 3],
+                        proto: Proto::BC2RT,
+                        proto_rotate: true,
+                    }),
+                })),
+                false,
             );
         } else {
             sys.run_d(
                 m as u8,
                 Mode::RT,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultEventHandler {}),
+                })),
+                false,
             );
         }
     }
-    let attacker_router = Router {
-        // control all communications (bc only)
-        scheduler: DefaultScheduler {
-            total_device: n_devices - 1,
-            target: 0,
-            data: vec![1, 2, 3],
-            proto: Proto::BC2RT,
-            proto_rotate: true,
-        },
-        // control device-level response
-        handler: CollisionAttackAgainstTheBus {
-            nwords_inj: 5,
-            started: 0,
-            success: false,
-        },
-    };
-
     sys.run_d(
         n_devices - 1,
         Mode::RT,
-        Arc::new(Mutex::new(attacker_router)),
-        AttackType::AtkCollisionAttackAgainstTheBus,
+        Arc::new(Mutex::new(EventHandlerEmitter {
+            handler: Box::new(CollisionAttackAgainstTheBus {
+                nwords_inj: 5,
+                started: 0,
+                success: false,
+            }),
+        })),
+        true,
     );
     sys.go();
     sys.sleep_ms(10);

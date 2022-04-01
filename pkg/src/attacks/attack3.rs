@@ -1,6 +1,6 @@
 use crate::sys::{
-    AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
-    EventHandler, Mode, Proto, Router, State, System, Word, TR, WRD_EMPTY,
+    AttackType, DefaultBCEventHandler, DefaultEventHandler, Device, ErrMsg, EventHandler,
+    EventHandlerEmitter, Mode, Proto, State, System, Word, TR, WRD_EMPTY,
 };
 use std::sync::{Arc, Mutex};
 
@@ -23,36 +23,12 @@ impl DataThrashingAgainstRT {
         d.write(w);
         self.success = true;
     }
-    pub fn verify(&self, system: &System) -> bool {
-        let mut bc_ready_times = 0;
-
-        for l in &(system.devices[0].lock().unwrap().logs) {
-            if l.6 == ErrMsg::MsgBCReady {
-                bc_ready_times += 1;
-                if bc_ready_times > 2{
-                    // no more than twice
-                    return false;
-                }
-            }
-        }
-
-        for d in &system.devices {
-            let local_d = d.lock().unwrap();
-            if local_d.address == self.target {
-                for l in &local_d.logs {
-                    if matches!(l.6, ErrMsg::MsgMCXClr { .. }) {
-                        // the target's memory has been cleared
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return return false;
-    }
 }
 
 impl EventHandler for DataThrashingAgainstRT {
+    fn get_attk_type(&self) -> AttackType {
+        AttackType::AtkDataThrashingAgainstRT
+    }
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         // This replaces 'jam_cmdwords' from Michael's code
         // attack only once
@@ -83,6 +59,33 @@ impl EventHandler for DataThrashingAgainstRT {
         }
         self.default_on_dat(d, w);
     }
+    fn verify(&mut self, system: &System) -> bool {
+        let mut bc_ready_times = 0;
+
+        for l in &(system.devices[0].lock().unwrap().logs) {
+            if l.6 == ErrMsg::MsgBCReady {
+                bc_ready_times += 1;
+                if bc_ready_times > 2 {
+                    // no more than twice
+                    return false;
+                }
+            }
+        }
+
+        for d in &system.devices {
+            let local_d = d.lock().unwrap();
+            if local_d.address == self.target {
+                for l in &local_d.logs {
+                    if matches!(l.6, ErrMsg::MsgMCXClr { .. }) {
+                        // the target's memory has been cleared
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
 }
 
 pub fn eval_attack3(w_delays: u128, proto: Proto) -> bool {
@@ -94,32 +97,29 @@ pub fn eval_attack3(w_delays: u128, proto: Proto) -> bool {
 
     // the last device is kept for attacker
     for m in 0..n_devices - 1 {
-        let default_router = Router {
-            // control all communications (bc only)
-            scheduler: DefaultScheduler {
-                total_device: n_devices - 1,
-                target: 0,
-                data: vec![1, 2, 3],
-                proto: proto,
-                proto_rotate: false,
-            },
-            // control device-level response
-            handler: DefaultEventHandler {},
-        };
-
         if m == 0 {
             sys.run_d(
                 m as u8,
                 Mode::BC,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultBCEventHandler {
+                        total_device: n_devices - 1,
+                        target: 0,
+                        data: vec![1, 2, 3],
+                        proto: proto,
+                        proto_rotate: false,
+                    }),
+                })),
+                false,
             );
         } else {
             sys.run_d(
                 m as u8,
                 Mode::RT,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultEventHandler {}),
+                })),
+                false,
             );
         }
     }
@@ -130,25 +130,18 @@ pub fn eval_attack3(w_delays: u128, proto: Proto) -> bool {
         target: 2, // attacking RT address @4
         target_found: false,
     };
-    let attacker_router = Arc::new(Mutex::new(Router {
-        // control all communications (bc only)
-        scheduler: EmptyScheduler {},
-        // control device-level response
-        handler: attk,
+    let attacker_emitter = Arc::new(Mutex::new(EventHandlerEmitter {
+        handler: Box::new(attk),
     }));
 
-    sys.run_d(
-        n_devices - 1,
-        Mode::RT,
-        Arc::clone(&attacker_router),
-        AttackType::AtkDataThrashingAgainstRT,
-    );
+    sys.run_d(n_devices - 1, Mode::RT, Arc::clone(&attacker_emitter), true);
     sys.go();
     sys.sleep_ms(50);
     sys.stop();
     sys.join();
-    let l_router = Arc::clone(&attacker_router);
-    return l_router.lock().unwrap().handler.verify(&sys);
+    let l_emitter = Arc::clone(&attacker_emitter);
+
+    return l_emitter.lock().unwrap().handler.verify(&sys);
     // let l_attk = l_router.unwrap().handler;
     // .lock().unwrap();
     // return l_router.unwrap().handler.verify(&devices, &logs);

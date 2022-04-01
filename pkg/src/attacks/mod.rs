@@ -9,8 +9,12 @@ pub mod attack7;
 pub mod attack8;
 pub mod attack9;
 
-pub use {
-    // attack1::test_attack1, attack10::test_attack10, attack2::test_attack2, attack3::test_attack3,
-    // attack4::test_attack4, attack5::test_attack5, attack6::test_attack6, attack7::test_attack7,
-    // attack8::test_attack8
+use crate::sys::{
+    format_log, AttackType, DefaultBCEventHandler, DefaultEventHandler, Device, ErrMsg,
+    EventHandler, EventHandlerEmitter, Mode, Proto, State, System, Word, TR, WRD_EMPTY,
 };
+use std::sync::{Arc, Mutex};
+
+pub struct AttackController {
+    pub current_attack: AttackType,
+}

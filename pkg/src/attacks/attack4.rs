@@ -1,6 +1,6 @@
 use crate::sys::{
-    AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
-    Router, State, System, Word, WRD_EMPTY, TR, BROADCAST_ADDRESS
+    AttackType, DefaultBCEventHandler, DefaultEventHandler, Device, ErrMsg, EventHandler,
+    EventHandlerEmitter, Mode, Proto, State, System, Word, BROADCAST_ADDRESS, TR, WRD_EMPTY,
 };
 use std::sync::{Arc, Mutex};
 
@@ -39,6 +39,9 @@ impl MITMAttackOnRTs {
 }
 
 impl EventHandler for MITMAttackOnRTs {
+    fn get_attk_type(&self) -> AttackType {
+        AttackType::AtkMITMAttackOnRTs
+    }
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         if !(self.target_src_found && self.target_dst_found) && !self.done {
             if w.tr() == TR::Receive && !self.target_dst_found && w.address() != BROADCAST_ADDRESS {
@@ -55,7 +58,10 @@ impl EventHandler for MITMAttackOnRTs {
                             .to_string(),
                     ),
                 );
-            } else if w.tr() == TR::Transmit && !self.target_src_found && w.address() != BROADCAST_ADDRESS {
+            } else if w.tr() == TR::Transmit
+                && !self.target_src_found
+                && w.address() != BROADCAST_ADDRESS
+            {
                 self.target_src = w.address();
                 self.target_src_found = true;
                 d.log(
@@ -102,63 +108,49 @@ pub fn test_attack4() {
 
     // the last device is kept for attacker
     for m in 0..n_devices - 1 {
-        let default_router = Router {
-            // control all communications (bc only)
-            scheduler: DefaultScheduler {
-                total_device: n_devices - 1,
-                target: 0,
-                data: vec![1, 2, 3],
-                proto: Proto::BC2RT,
-                proto_rotate: true,
-            },
-            // control device-level response
-            handler: DefaultEventHandler {},
-        };
-
         if m == 0 {
             sys.run_d(
                 m as u8,
                 Mode::BC,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultBCEventHandler {
+                        total_device: n_devices - 1,
+                        target: 0,
+                        data: vec![1, 2, 3],
+                        proto: Proto::BC2RT,
+                        proto_rotate: true,
+                    }),
+                })),
+                false,
             );
         } else {
             sys.run_d(
                 m as u8,
                 Mode::RT,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultEventHandler {}),
+                })),
+                false,
             );
         }
     }
-    let attacker_router = Router {
-        // control all communications (bc only)
-        scheduler: DefaultScheduler {
-            total_device: n_devices - 1,
-            target: 0,
-            data: vec![1, 2, 3],
-            proto: Proto::BC2RT,
-            proto_rotate: true,
-        },
-        // control device-level response
-        handler: MITMAttackOnRTs {
-            attack_times: Vec::new(),
-            word_count: 0u8,
-            injected_words: 0u8,
-            success: false,
-            target_src: 0u8,
-            target_dst: 0u8,
-            target_dst_found: false, // target found in traffic
-            target_src_found: false,
-            done: false,
-        },
-    };
-
     sys.run_d(
         n_devices - 1,
         Mode::RT,
-        Arc::new(Mutex::new(attacker_router)),
-        AttackType::AtkMITMAttackOnRTs,
+        Arc::new(Mutex::new(EventHandlerEmitter {
+            handler: Box::new(MITMAttackOnRTs {
+                attack_times: Vec::new(),
+                word_count: 0u8,
+                injected_words: 0u8,
+                success: false,
+                target_src: 0u8,
+                target_dst: 0u8,
+                target_dst_found: false, // target found in traffic
+                target_src_found: false,
+                done: false,
+            }),
+        })),
+        true,
     );
     sys.go();
     sys.sleep_ms(10);

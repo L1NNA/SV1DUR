@@ -4,8 +4,8 @@ use crate::attacks::attack6::eval_attack6;
 use crate::attacks::attack7::eval_attack7;
 use crate::attacks::attack9::eval_attack9;
 use crate::sys::{
-    format_log, AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
-    EventHandler, Mode, Proto, Router, State, System, Word, WRD_EMPTY,
+    format_log, AttackType, DefaultEventHandler, Device, ErrMsg, EventHandler, Mode, Proto, State,
+    System, Word, WRD_EMPTY,
 };
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::thread;

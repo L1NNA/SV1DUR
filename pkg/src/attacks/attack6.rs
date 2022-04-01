@@ -1,6 +1,7 @@
 use crate::sys::{
-    format_log, AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
-    EventHandler, Mode, Proto, Router, State, System, Word, BROADCAST_ADDRESS, TR, WRD_EMPTY,
+    format_log, AttackType, DefaultBCEventHandler, DefaultEventHandler, Device, ErrMsg,
+    EventHandler, EventHandlerEmitter, Mode, Proto, State, System, Word, BROADCAST_ADDRESS, TR,
+    WRD_EMPTY,
 };
 use std::sync::{Arc, Mutex};
 
@@ -28,31 +29,12 @@ impl FakeStatusReccmd {
         );
         self.success = true;
     }
-    pub fn verify(&self, system: &System) -> bool {
-        let mut attk_session = false;
-        for l in &system.logs {
-            if matches!(l.6, ErrMsg::MsgAttk { .. }) {
-                attk_session = true;
-            }
-
-            if attk_session {
-                if l.6 == ErrMsg::MsgEntSte
-                    && l.5.attk() == (AttackType::AtkFakeStatusReccmd as u32)
-                {
-                    println!("{}", format_log(l));
-                    return true;
-                }
-            }
-
-            if l.6 == ErrMsg::MsgBCReady {
-                attk_session = false;
-            }
-        }
-        return false;
-    }
 }
 
 impl EventHandler for FakeStatusReccmd {
+    fn get_attk_type(&self) -> AttackType {
+        AttackType::AtkFakeStatusReccmd
+    }
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         if d.clock.elapsed().as_nanos() > self.warm_up && !self.target_found {
             let destination = w.address();
@@ -104,6 +86,28 @@ impl EventHandler for FakeStatusReccmd {
             }
         }
     }
+    fn verify(&mut self, system: &System) -> bool {
+        let mut attk_session = false;
+        for l in &system.logs {
+            if matches!(l.6, ErrMsg::MsgAttk { .. }) {
+                attk_session = true;
+            }
+
+            if attk_session {
+                if l.6 == ErrMsg::MsgEntSte
+                    && l.5.attk() == (AttackType::AtkFakeStatusReccmd as u32)
+                {
+                    println!("{}", format_log(l));
+                    return true;
+                }
+            }
+
+            if l.6 == ErrMsg::MsgBCReady {
+                attk_session = false;
+            }
+        }
+        return false;
+    }
 }
 
 pub fn eval_attack6(w_delays: u128, proto: Proto) -> bool {
@@ -115,32 +119,29 @@ pub fn eval_attack6(w_delays: u128, proto: Proto) -> bool {
 
     // the last device is kept for attacker
     for m in 0..n_devices - 1 {
-        let default_router = Router {
-            // control all communications (bc only)
-            scheduler: DefaultScheduler {
-                total_device: n_devices - 1,
-                target: 0,
-                data: vec![1, 2, 3],
-                proto: proto,
-                proto_rotate: false,
-            },
-            // control device-level response
-            handler: DefaultEventHandler {},
-        };
-
         if m == 0 {
             sys.run_d(
                 m as u8,
                 Mode::BC,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultBCEventHandler {
+                        total_device: n_devices - 1,
+                        target: 0,
+                        data: vec![1, 2, 3],
+                        proto: proto,
+                        proto_rotate: false,
+                    }),
+                })),
+                false,
             );
         } else {
             sys.run_d(
                 m as u8,
                 Mode::RT,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultEventHandler {}),
+                })),
+                false,
             );
         }
     }
@@ -153,19 +154,11 @@ pub fn eval_attack6(w_delays: u128, proto: Proto) -> bool {
         destination: 0u8,
         warm_up: 1_000_000,
     };
-    let attacker_router = Arc::new(Mutex::new(Router {
-        // control all communications (bc only)
-        scheduler: EmptyScheduler {},
-        // control device-level response
-        handler: attk,
+    let attacker_router = Arc::new(Mutex::new(EventHandlerEmitter {
+        handler: Box::new(attk),
     }));
 
-    sys.run_d(
-        n_devices - 1,
-        Mode::RT,
-        Arc::clone(&attacker_router),
-        AttackType::AtkFakeStatusReccmd,
-    );
+    sys.run_d(n_devices - 1, Mode::RT, Arc::clone(&attacker_router), true);
     sys.go();
     sys.sleep_ms(100);
     sys.stop();
