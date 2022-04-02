@@ -93,7 +93,8 @@ impl EventHandler for MITMAttackOnRTs {
             self.success = true;
             self.target_src_found = false;
             self.target_dst_found = false;
-            self.done = false;
+            // no repeat
+            // self.done = false;
         }
     }
 }

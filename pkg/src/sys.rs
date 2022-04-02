@@ -5,7 +5,6 @@ use spin_sleep;
 use std::fmt;
 use std::fs::{create_dir, read_dir, File, OpenOptions};
 use std::io::prelude::*;
-use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -15,7 +14,7 @@ pub const WRD_EMPTY: Word = Word { 0: 0 };
 pub const ATK_DEFAULT_DELAYS: u128 = 4000;
 pub const CONFIG_PRINT_LOGS: bool = false;
 pub const CONFIG_SAVE_DEVICE_LOGS: bool = false;
-pub const CONFIG_SAVE_SYS_LOGS: bool = false;
+pub const CONFIG_SAVE_SYS_LOGS: bool = true;
 pub const BROADCAST_ADDRESS: u8 = 31;
 
 #[allow(unused)]
@@ -39,6 +38,8 @@ pub enum ErrMsg {
     MsgEntSteDrop,
     MsgAttk(String),
     MsgMCXClr(usize),
+    // MB log
+    MsgBMLog,
 }
 
 impl ErrMsg {
@@ -62,6 +63,7 @@ impl ErrMsg {
             MsgAttk(msg) => msg.to_owned(),
             // mode change
             MsgMCXClr(mem_len) => format!("MCX[{}] Clr", mem_len),
+            MsgBMLog => "BM".to_owned(),
         }
     }
 }
@@ -77,6 +79,14 @@ pub fn format_log(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> Strin
         l.5,
         l.6.value(),
         l.7
+    );
+}
+
+pub fn format_log_bm(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> String {
+    return format!(
+        "{} {:?}",
+        l.0,
+        l.5,
     );
 }
 
@@ -269,7 +279,6 @@ pub trait EventHandler: Send {
             // 31 is the boardcast address
             if destination == d.address || destination == BROADCAST_ADDRESS {
                 // d.log(*w, ErrMsg::MsgEntCmd);
-                // println!("{} {} {}", w, w.tr(), w.mode());
                 d.number_of_current_cmd += 1;
                 // if there was previously a command word recieved
                 // cancel previous command (clear state)
@@ -293,9 +302,9 @@ pub trait EventHandler: Send {
                 }
             }
             // rt2rt sub destination
-            if w.tr() == TR::Transmit && w.sub_address() == d.address {
-                self.on_cmd_rcv(d, w);
-            }
+            // if w.tr() == TR::Transmit && w.sub_address() == d.address {
+            //     self.on_cmd_rcv(d, w);
+            // }
         }
     }
     fn default_on_cmd_trx(&mut self, d: &mut Device, w: &mut Word) {
@@ -696,6 +705,7 @@ impl System {
         let go = Arc::clone(&self.go);
         let exit = Arc::clone(&self.exit);
         let log_file = PathBuf::from(self.home_dir.clone()).join(format!("{}.log", device_obj));
+        let log_file_bm = PathBuf::from(self.home_dir.clone()).join(format!("{}.dat", device_obj));
         self.n_devices += 1;
         let device_mtx = Arc::new(Mutex::new(device_obj));
         let device_mtx_thread_local = device_mtx.clone();
@@ -765,7 +775,12 @@ impl System {
                                 let mut w = res.unwrap();
                                 if w.address() == device.address {
                                     let mut local_emitter = device_handler_emitter.lock().unwrap();
-                                    device.atk_type = local_emitter.handler.get_attk_type();
+                                    let new_atk_type = local_emitter.handler.get_attk_type();
+                                    if new_atk_type != device.atk_type {
+                                        // new handler
+                                        device.reset_all_stateful();
+                                        device.atk_type = new_atk_type;
+                                    }
                                     if prev_word.1 {
                                         // if previous word is a valid message then file parity error
                                         // if not, the error was already filed.
@@ -784,17 +799,23 @@ impl System {
                             let mut w = prev_word.2;
                             let mut local_emitter = device_handler_emitter.lock().unwrap();
                             device.atk_type = local_emitter.handler.get_attk_type();
-                            if w.sync() == 1 {
-                                if w.instrumentation_bit() == 1 {
-                                    local_emitter.handler.on_cmd(&mut device, &mut w)
-                                } else {
-                                    // status word
-                                    local_emitter.handler.on_sts(&mut device, &mut w);
-                                }
+
+                            if device.mode == Mode::BM {
+                                device.log(w, ErrMsg::MsgBMLog);
                             } else {
-                                // data word
-                                local_emitter.handler.on_dat(&mut device, &mut w);
+                                if w.sync() == 1 {
+                                    if w.instrumentation_bit() == 1 {
+                                        local_emitter.handler.on_cmd(&mut device, &mut w)
+                                    } else {
+                                        // status word
+                                        local_emitter.handler.on_sts(&mut device, &mut w);
+                                    }
+                                } else {
+                                    // data word
+                                    local_emitter.handler.on_dat(&mut device, &mut w);
+                                }
                             }
+
                             // clear cache
                             prev_word = (0, false, WRD_EMPTY);
                         }
@@ -817,6 +838,26 @@ impl System {
                             let device_des = device.to_string();
                             for l in &device.logs {
                                 writeln!(file, "{}", format_log(&l)).unwrap();
+                            }
+                            println!("{} Done flushing logs", device_des);
+                        }
+                        // for bus monitor
+                        if CONFIG_SAVE_SYS_LOGS && device.mode == Mode::BM {
+                            println!(
+                                "{} writing {} logs to {} ",
+                                device,
+                                device.logs.len(),
+                                log_file_bm.to_str().unwrap()
+                            );
+                            let mut file = OpenOptions::new()
+                                .write(true)
+                                .append(true)
+                                .create(true)
+                                .open(log_file_bm)
+                                .unwrap();
+                            let device_des = device.to_string();
+                            for l in &device.logs {
+                                writeln!(file, "{}", format_log_bm(&l)).unwrap();
                             }
                             println!("{} Done flushing logs", device_des);
                         }
@@ -861,6 +902,7 @@ impl EventHandler for DefaultBCEventHandler {
         //
         // d.act_rt2bc(self.target, self.data.len() as u8);
         // a simple rotating scheduler
+        // println!("{:?}", self.proto);
         match self.proto {
             Proto::RT2RT => {
                 d.act_rt2rt(self.target, another_target, self.data.len() as u8);
@@ -909,6 +951,26 @@ pub enum AttackType {
     AtkDesynchronizationAttackOnRT = 8,
     AtkDataCorruptionAttack = 9,
     AtkCommandInvalidationAttack = 10,
+}
+
+impl From<i32> for AttackType {
+    fn from(value: i32) -> Self {
+        use AttackType::*;
+        match value {
+            0 => Benign,
+            1 => AtkCollisionAttackAgainstTheBus,
+            2 => AtkCollisionAttackAgainstAnRT,
+            3 => AtkDataThrashingAgainstRT,
+            4 => AtkMITMAttackOnRTs,
+            5 => AtkShutdownAttackRT,
+            6 => AtkFakeStatusReccmd,
+            7 => AtkFakeStatusTrcmd,
+            8 => AtkDesynchronizationAttackOnRT,
+            9 => AtkDataCorruptionAttack,
+            10 => AtkCommandInvalidationAttack,
+            _ => Benign,
+        }
+    }
 }
 
 pub fn eval_sys(w_delays: u128, n_devices: u8, proto: Proto, proto_rotate: bool) -> System {

@@ -52,6 +52,13 @@ impl EventHandler for DataCorruptionAttack {
         if destination == self.target && self.target_found == false && w.tr() == TR::Transmit {
             self.word_count = w.dword_count();
             // do we need the sub address?
+            // println!(
+            //     "!!!!{}/{} {:?}, {} ",
+            //     destination,
+            //     self.target,
+            //     w.tr(),
+            //     self.target_found
+            // );
             d.log(
                 *w,
                 ErrMsg::MsgAttk(
