@@ -1,7 +1,7 @@
 use crate::sys::{Router, System};
 use crate::schedulers::{DefaultScheduler, EmptyScheduler, Proto};
 use crate::devices::Device;
-use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS};
+use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS, ModeCode};
 use crate::event_handlers::{EventHandler, DefaultEventHandler};
 use std::sync::{Arc, Mutex};
 
@@ -24,9 +24,9 @@ impl DesynchronizationAttackOnRT {
             ),
         );
         let tr = TR::Receive;
-        let word_count = 17;
+        let word_count = ModeCode::Synchronization;
         self.attack_times.push(d.clock.elapsed().as_nanos());
-        let w = Word::new_cmd(self.target, word_count, tr);
+        let w = Word::new_cmd(self.target, word_count as u8, tr);
         d.write(w);
         let w = Word::new_data(0x000F);
         d.write(w);
