@@ -49,16 +49,16 @@ impl EventHandler for DataCorruptionAttack {
         // This function replaces "find_RT_tcmd" from Michael's code
         // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
         let destination = w.address();
+        // println!(
+        //     "!!!!{}/{} {:?}, {} ",
+        //     destination,
+        //     self.target,
+        //     w.tr(),
+        //     self.target_found
+        // );
         if destination == self.target && self.target_found == false && w.tr() == TR::Transmit {
             self.word_count = w.dword_count();
             // do we need the sub address?
-            // println!(
-            //     "!!!!{}/{} {:?}, {} ",
-            //     destination,
-            //     self.target,
-            //     w.tr(),
-            //     self.target_found
-            // );
             d.log(
                 *w,
                 ErrMsg::MsgAttk(

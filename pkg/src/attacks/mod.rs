@@ -122,7 +122,7 @@ pub fn eval_attack_controller(
     proto: Proto,
     proto_rotate: bool,
     attack: i32,
-) -> System {
+) -> HashMap<u32, i32> {
     // let n_devices = 3;
     // let w_delays = w_delays;
     let mut sys = System::new(n_devices as u32, w_delays);
@@ -211,5 +211,19 @@ pub fn eval_attack_controller(
     }
     println!("{:?}", result);
 
-    return sys;
+    return result;
+}
+
+#[cfg(test)]
+mod tests {
+    // Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn test_attack_controller() {
+        for attack_index in 1..10 {
+            let result = eval_attack_controller(0, 5, Proto::RT2RT, false, attack_index);
+            assert!(result.contains_key(&(attack_index as u32)) == true);
+        }
+    }
 }
