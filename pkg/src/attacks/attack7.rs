@@ -1,7 +1,8 @@
-use crate::sys::{
-    AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
-    EventHandler, Mode, Proto, Router, System, Word, BROADCAST_ADDRESS, TR, WRD_EMPTY,
-};
+use crate::sys::{Router, System};
+use crate::schedulers::{DefaultScheduler, EmptyScheduler, Proto};
+use crate::devices::Device;
+use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS};
+use crate::event_handlers::{EventHandler, DefaultEventHandler};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -16,7 +17,7 @@ pub struct FakeStatusTrcmd {
 impl FakeStatusTrcmd {
     fn fake_status(&mut self, d: &mut Device) {
         self.attack_times.push(d.clock.elapsed().as_nanos());
-        let w = Word::new_status(self.target);
+        let w = Word::new_malicious_status(self.target);
         d.write(w);
         d.log(
             WRD_EMPTY,
@@ -36,7 +37,7 @@ impl FakeStatusTrcmd {
             // dropped message during attack session
             if attk_session {
                 if l.6 == ErrMsg::MsgEntSteDrop {
-                    if l.5.attk() == (AttackType::AtkFakeStatusTrcmd as u32) {
+                    if l.5.attk() == (AttackType::AtkFakeStatusTrcmd as u8) {
                         return false;
                     } else {
                         return true;

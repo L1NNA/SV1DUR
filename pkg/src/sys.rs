@@ -1,443 +1,23 @@
-use bitfield::bitfield;
+use crate::primitive_types::{ErrMsg, Word, Mode, State, AttackType, WRD_EMPTY,
+CONFIG_SAVE_DEVICE_LOGS, CONFIG_SAVE_SYS_LOGS, ATK_DEFAULT_DELAYS,
+WORD_LOAD_TIME, COLLISION_TIME};
+use crate::event_handlers::{EventHandler, DefaultEventHandler};
+use crate::devices::{Device, format_log};
+use crate::schedulers::{DefaultScheduler, Scheduler, Proto};
 use chrono::Utc;
-use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
+use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, select, Select, TryRecvError::Empty};
 use spin_sleep;
-use std::fmt;
+#[allow(unused)]
 use std::fs::{create_dir, read_dir, File, OpenOptions};
 use std::io::prelude::*;
+#[allow(unused)]
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-pub const WRD_EMPTY: Word = Word { 0: 0 };
-pub const ATK_DEFAULT_DELAYS: u128 = 4000;
-pub const CONFIG_PRINT_LOGS: bool = false;
-pub const CONFIG_SAVE_DEVICE_LOGS: bool = false;
-pub const CONFIG_SAVE_SYS_LOGS: bool = false;
-pub const BROADCAST_ADDRESS: u8 = 31;
-pub const ClearCache: u8 = 30;
-pub const TXshutdown: u8 = 4;
-pub const Synchronization: u8 = 17;
-
-#[allow(unused)]
-#[derive(Clone, Debug, PartialEq)]
-pub enum ErrMsg {
-    MsgEmpt,
-    // show write queue size
-    MsgWrt(usize),
-    MsgBCReady,
-    // show write queue size
-    MsgStaChg(usize),
-    MsgEntWrdRec,
-    MsgEntErrPty,
-    MsgEntCmd,
-    MsgEntCmdRcv,
-    MsgEntCmdTrx,
-    MsgEntCmdMcx,
-    MsgEntDat,
-    MsgEntSte,
-    // dropped status word
-    MsgEntSteDrop,
-    MsgAttk(String),
-    MsgMCXClr(usize),
-}
-
-impl ErrMsg {
-    fn value(&self) -> String {
-        use ErrMsg::*;
-        match self {
-            MsgEmpt => "".to_owned(),
-            // show write queue size
-            MsgWrt(wq) => format!("Wrt({})", wq).to_string(),
-            MsgBCReady => "BC is ready".to_owned(),
-            MsgStaChg(wq) => format!("Status Changed({})", wq).to_string(),
-            MsgEntWrdRec => "Word Received".to_owned(),
-            MsgEntErrPty => "Parity Error".to_owned(),
-            MsgEntCmd => "CMD Received".to_owned(),
-            MsgEntCmdRcv => "CMD RCV Received".to_owned(),
-            MsgEntCmdTrx => "CMD TRX Received".to_owned(),
-            MsgEntCmdMcx => "CMD MCX Received".to_owned(),
-            MsgEntDat => "Data Received".to_owned(),
-            MsgEntSte => "Status Received".to_owned(),
-            MsgEntSteDrop => "Status Dropped".to_owned(),
-            MsgAttk(msg) => msg.to_owned(),
-            // mode change
-            MsgMCXClr(mem_len) => format!("MCX[{}] Clr", mem_len),
-        }
-    }
-}
-
-pub fn format_log(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> String {
-    return format!(
-        "{} {}{:02}-{:02} {:^22} {} {:^22} avg_d_t:{}",
-        l.0,
-        l.1,
-        l.2,
-        l.3,
-        l.4.to_string(),
-        l.5,
-        l.6.value(),
-        l.7
-    );
-}
-
-#[derive(Clone, Debug, PartialEq)]
-#[repr(u8)]
-pub enum TR {
-    Receive = 0,
-    Transmit = 1,
-}
-
-impl From<u8> for TR {
-    fn from(value: u8) -> Self {
-        use TR::*;
-        match value {
-            0 => Receive,
-            _ => Transmit,
-        }
-    }
-}
-
-bitfield! {
-    #[derive(Copy, Clone)]
-    pub struct Word(u32);
-    impl Debug;
-    u8;
-    // for status
-    pub sync, set_sync: 2, 0;
-    pub address, set_address: 7, 3;
-    pub message_errorbit, set_message_errorbit: 8, 8;
-    pub instrumentation_bit, set_instrumentation_bit: 9, 9;
-    pub service_request_bit, set_service_request_bit: 10, 10;
-    pub reserved_bits, set_reserved_bits: 13, 11;
-    pub brdcst_received_bit, set_brdcst_received_bit: 14, 14;
-    pub busy_bit, set_busy_bit: 15, 15;
-    pub subsystem_flag_bit, set_subsystem_flag_bit: 16, 16;
-    pub dynamic_bus_control_accpt_bit, set_dynamic_bus_control_accpt_bit: 17, 17;
-    pub terminal_flag_bit, set_terminal_flag_bit: 18, 18;
-    pub parity_bit, set_parity_bit: 19, 19;
-    // for command:
-    pub into TR, tr, set_tr: 8, 8;
-    // it was 13, 9 but since we use instrumentation bit
-    // we have kept reduce the sub-address space to 15.
-    pub sub_address, set_sub_address: 13, 10;
-    pub mode, set_mode: 13, 11;
-    // pub mode, set_mode: 13, 9;
-    pub dword_count, set_dword_count: 18, 14;
-    pub mode_code, set_mode_code: 18, 14;
-    // for data word
-    u32;
-    pub all,_ : 20, 0;
-    pub data, set_data: 18, 3;
-    // additional (attack type):
-    pub attk, set_attk: 24,21;
-}
-
-impl fmt::Display for Word {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "w:{:#027b}[{:02}]", self.0, self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
-    }
-}
-
-impl Word {
-    pub fn new_status(src_addr: u8) -> Word {
-        let mut w = Word { 0: 0 };
-        w.set_sync(1);
-        w.set_address(src_addr);
-        w.calculate_parity_bit();
-        return w;
-    }
-
-    pub fn new_data(val: u32) -> Word {
-        let mut w = Word { 0: 0 };
-        w.set_data(val as u32);
-        w.calculate_parity_bit();
-        return w;
-    }
-
-    pub fn new_cmd(addr: u8, dword_count: u8, tr: TR) -> Word {
-        let mut w = Word { 0: 0 };
-        w.set_sync(1);
-        w.set_tr(tr as u8); // 1: transmit, 0: receive
-        w.set_address(addr); // the RT address which is five bits long
-                             // address 11111 (31) is reserved for broadcast protocol
-
-        w.set_dword_count(dword_count); // the quantity of data that will follow after the command
-        w.set_mode(2);
-        w.set_instrumentation_bit(1);
-        w.calculate_parity_bit();
-        return w;
-    }
-    #[allow(unused)]
-    pub fn calculate_parity_bit(&mut self) {
-        /*
-        This code will calculate and apply the parity bit.  This will not affect other bits in the bitfield.
-        */
-        // let mask = u32::MAX - 1; //MAX-1 leaves the paritybit empty (I think this assumption may be wrong.  I think this is actually the sync bits)
-        let mask = u32::MAX - 2u32.pow(19); // This will likely be the code we need.  It keeps all of the bits outside of the "19" bit.
-        let int = self.all() & mask;
-        let parity_odd = true;
-        if int.count_ones() % 2 == 0 {
-            self.set_parity_bit(!parity_odd as u8);
-        } else {
-            self.set_parity_bit(parity_odd as u8);
-        }
-    }
-}
-
-#[allow(unused)]
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Mode {
-    RT,
-    BC,
-    BM,
-}
-
-impl fmt::Display for Mode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-#[allow(unused)]
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum State {
-    Idle,
-    Off,
-    Pause,
-    // waiting for data
-    AwtData,
-    // transmitting (including artificial delays)
-    BusyTrx,
-    // bc2rt - bc waiting for reciever status code
-    AwtStsRcvB2R(u8),
-    // rt2bc - bc waiting for the transmitter status code
-    AwtStsTrxR2B(u8),
-    // rt2rt - bc waiting for reciever status code
-    AwtStsRcvR2R(u8, u8),
-    // rt2rt - bc waiting for the transmitter status code
-    AwtStsTrxR2R(u8, u8),
-}
-impl fmt::Display for State {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-pub trait EventHandler: Clone + Send {
-    fn on_wrd_rec(&mut self, d: &mut Device, w: &mut Word) {
-        self.default_on_wrd_rec(d, w);
-    }
-    fn on_err_parity(&mut self, d: &mut Device, w: &mut Word) {
-        self.default_on_err_parity(d, w);
-    }
-    fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        self.default_on_cmd(d, w);
-    }
-    fn on_cmd_rcv(&mut self, d: &mut Device, w: &mut Word) {
-        self.default_on_cmd_rcv(d, w);
-    }
-    fn on_cmd_trx(&mut self, d: &mut Device, w: &mut Word) {
-        self.default_on_cmd_trx(d, w);
-    }
-    fn on_cmd_mcx(&mut self, d: &mut Device, w: &mut Word) {
-        self.default_on_cmd_mcx(d, w);
-    }
-    fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
-        self.default_on_dat(d, w);
-    }
-    fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
-        self.default_on_sts(d, w);
-    }
-
-    #[allow(unused)]
-    fn default_on_wrd_rec(&mut self, d: &mut Device, w: &mut Word) {
-        // for bm to monitor every word
-        // d.log(*w, ErrMsg::MsgEntWrdRec);
-    }
-
-    #[allow(unused)]
-    fn default_on_err_parity(&mut self, d: &mut Device, w: &mut Word) {
-        // log error tba
-        d.log(*w, ErrMsg::MsgEntErrPty);
-    }
-    fn default_on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        // cmds are only for RT, matching self's address
-        if d.mode == Mode::RT {
-            let destination = w.address();
-            // 31 is the boardcast address
-            if destination == d.address || destination == BROADCAST_ADDRESS {
-                // d.log(*w, ErrMsg::MsgEntCmd);
-                // println!("{} {} {}", w, w.tr(), w.mode());
-                d.number_of_current_cmd += 1;
-                // if there was previously a command word recieved
-                // cancel previous command (clear state)
-                if d.number_of_current_cmd >= 2 {
-                    // cancel whatever going to write
-                    d.write_queue.clear();
-                    d.reset_all_stateful();
-                }
-                if w.tr() == TR::Receive && (w.mode() == 1 || w.mode() == 0) {
-                    // shutdown etc mode change command
-                    self.on_cmd_mcx(d, w);
-                } else {
-                    if w.tr() == TR::Receive {
-                        // receive command
-                        self.on_cmd_rcv(d, w);
-                    } else {
-                        // transmission command
-                        // faked device only mimic events but not responding
-                        self.on_cmd_trx(d, w);
-                    }
-                }
-            }
-            // rt2rt sub destination
-            if w.tr() == TR::Transmit && w.sub_address() == d.address {
-                self.on_cmd_rcv(d, w);
-            }
-        }
-    }
-    fn default_on_cmd_trx(&mut self, d: &mut Device, w: &mut Word) {
-        // may be triggered after cmd
-        d.log(*w, ErrMsg::MsgEntCmdTrx);
-        if !d.fake {
-            d.set_state(State::BusyTrx);
-            d.write(Word::new_status(d.address));
-            for i in 0..w.dword_count() {
-                d.write(Word::new_data((i + 1) as u32));
-            }
-        }
-        let current_cmds = d.reset_all_stateful();
-        d.number_of_current_cmd = current_cmds;
-    }
-    fn default_on_cmd_rcv(&mut self, d: &mut Device, w: &mut Word) {
-        d.log(*w, ErrMsg::MsgEntCmdRcv);
-        // may be triggered after cmd
-        d.set_state(State::AwtData);
-        d.dword_count = 0;
-        d.dword_count_expected = w.dword_count();
-        if w.address() == BROADCAST_ADDRESS {
-            d.in_brdcst = true;
-        }
-    }
-    fn default_on_cmd_mcx(&mut self, d: &mut Device, w: &mut Word) {
-        if d.address == w.address() {
-            d.log(*w, ErrMsg::MsgEntCmdMcx);
-            // may be triggered after cmd
-            if !d.fake {
-                // actual operation not triggerred for attackers
-                // mode code match for command:
-                match w.mode_code() {
-                    4 => {
-                        // Mode code for TX shutdown
-                        d.reset_all_stateful();
-                        d.set_state(State::Off);
-                    }
-                    17 => {
-                        // synchronization
-                        // ccmd indicating that the next data word
-                        // is related to the current command
-                        // (in this case, the clock to be synced)
-                        d.ccmd = 1;
-                        d.set_state(State::AwtData);
-                    }
-                    30 => {
-                        // clear cache (only when it is recieving data)
-                        d.log(WRD_EMPTY, ErrMsg::MsgMCXClr(d.memory.len()));
-                        d.reset_all_stateful();
-                        d.set_state(State::Idle);
-                        // clear write queue (cancel the status words to be sent)
-                        d.write_queue.clear();
-                    }
-                    31 => {
-                        // cancel operation
-                        d.set_state(State::Idle);
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-    fn default_on_dat(&mut self, d: &mut Device, w: &mut Word) {
-        if d.state == State::AwtData {
-            d.log(*w, ErrMsg::MsgEntDat);
-            if d.ccmd == 1 {
-                // TBA:  synchronize clock to data
-                // (clock is u128 but data is not u16..)
-                // maybe set the microscecond component of the clock
-                d.ccmd = 0;
-            } else {
-                if d.dword_count < d.dword_count_expected {
-                    d.memory.push(w.data());
-                }
-                d.dword_count += 1;
-                if d.dword_count == d.dword_count_expected {
-                    d.set_state(State::BusyTrx);
-                    if d.mode != Mode::BC {
-                        // only real RT will responding status message
-                        if !d.fake {
-                            d.write(Word::new_status(d.address));
-                        }
-                    }
-                    d.reset_all_stateful();
-                }
-            }
-        }
-    }
-    fn default_on_sts(&mut self, d: &mut Device, w: &mut Word) {
-        if d.mode == Mode::BC {
-            d.log(*w, ErrMsg::MsgEntSte);
-            // check delta_t
-            if d.delta_t_start != 0 {
-                let delta_t = d.clock.elapsed().as_nanos() - d.delta_t_start;
-                // delta_t has to be in between 4 and 12
-                d.delta_t_avg += delta_t;
-                d.delta_t_count += 1;
-            }
-            match d.state {
-                State::AwtStsTrxR2B(src) => {
-                    //(transmitter confirmation)
-                    // rt2bc
-                    if src == w.address() {
-                        d.set_state(State::AwtData)
-                    }
-                }
-                State::AwtStsRcvB2R(dest) => {
-                    // rt2rt (reciver confirmation)
-                    // bc2rt
-                    if dest == w.address() {
-                        d.reset_all_stateful();
-                    }
-                }
-                State::AwtStsTrxR2R(src, dest) => {
-                    //(transmitter confirmation)
-                    // rt2rt
-                    if src == w.address() {
-                        d.set_state(State::AwtStsRcvR2R(src, dest));
-                        d.delta_t_start = d.clock.elapsed().as_nanos();
-                    }
-                }
-                State::AwtStsRcvR2R(src, dest) => {
-                    // rt2rt (reciver confirmation)
-                    // rt2rt
-                    if dest == w.address() {
-                        d.reset_all_stateful();
-                    }
-                }
-                _ => {
-                    // dropped status word 
-                    d.log(*w, ErrMsg::MsgEntSteDrop);
-                }
-            }
-        }
-    }
-}
-
-pub trait Scheduler: Clone + Send {
-    fn on_bc_ready(&mut self, d: &mut Device) {}
-}
+use std::collections::LinkedList;
 
 #[derive(Clone, Debug)]
 pub struct Router<K: Scheduler, V: EventHandler> {
@@ -445,153 +25,11 @@ pub struct Router<K: Scheduler, V: EventHandler> {
     pub handler: V,
 }
 
-#[derive(Clone, Debug)]
-pub struct Device {
-    pub fake: bool,
-    pub atk_type: AttackType,
-    pub ccmd: u8,
-    pub mode: Mode,
-    pub state: State,
-    pub memory: Vec<u32>,
-    pub number_of_current_cmd: u8,
-    pub in_brdcst: bool,
-    pub address: u8,
-    pub id: u32,
-    pub dword_count: u8,
-    pub dword_count_expected: u8,
-    pub clock: Instant,
-    pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
-    pub transmitters: Vec<Sender<Word>>,
-    pub read_queue: Vec<(u128, Word, bool)>,
-    pub write_queue: Vec<(u128, Word)>,
-    pub write_delays: u128,
-    pub receiver: Receiver<Word>,
-    pub delta_t_avg: u128,
-    pub delta_t_start: u128,
-    pub delta_t_count: u128,
-}
-
-impl Device {
-    pub fn write(&mut self, mut val: Word) {
-        // println!("writing {} {}", val, val.sync());
-        // for (i, s) in self.transmitters.iter().enumerate() {
-        //     if (i as u32) != self.id {
-        //         s.try_send(val);
-        //         // s.send(val);
-        //     }
-        // }
-        if self.fake {
-            val.set_attk(self.atk_type as u32);
-        }
-        if self.write_queue.len() < 1 {
-            self.write_queue
-                .push((self.clock.elapsed().as_nanos() + self.write_delays, val));
-        } else {
-            // println!("here {} {} {:?}, {}", self, self.write_queue.len(), self.write_queue.last().unwrap().0, self.write_delays);
-            self.write_queue
-                .push((self.write_queue.last().unwrap().0 + self.write_delays, val));
-        }
-        // let transmitters = self.transmitters.clone();
-        // let id = self.id.clone();
-        // thread::spawn(move || {
-        //     for (i, s) in transmitters.iter().enumerate() {
-        //         if (i as u32) != id {
-        //             s.try_send(val);
-        //             // s.send(val);
-        //         }
-        //     }
-        // });
-    }
-
-    pub fn read(&self) -> Result<Word, TryRecvError> {
-        // return self.receiver.recv().unwrap();
-        return self.receiver.try_recv();
-    }
-
-    pub fn reset_all_stateful(&mut self) -> u8 {
-        let current_cmd = self.number_of_current_cmd;
-        self.set_state(State::Idle);
-        self.number_of_current_cmd = 0;
-        self.delta_t_start = 0;
-        self.memory.clear();
-        self.dword_count = 0;
-        self.dword_count_expected = 0;
-        self.in_brdcst = false;
-        // return the previous number of cmd
-        // in case it shouldn't be reseted.
-        return current_cmd;
-    }
-
-    pub fn log(&mut self, word: Word, e: ErrMsg) {
-        let mut avg_delta_t = 0;
-        if self.delta_t_count > 0 {
-            avg_delta_t = self.delta_t_avg / self.delta_t_count;
-        }
-        let l = (
-            self.clock.elapsed().as_nanos(),
-            self.mode,
-            self.id,
-            self.address,
-            self.state,
-            word,
-            e,
-            avg_delta_t,
-        );
-        if CONFIG_PRINT_LOGS {
-            println!("{}", format_log(&l));
-        }
-        self.logs.push(l);
-    }
-
-    pub fn log_merge(&self, log_list: &mut Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>) {
-        for l in &self.logs {
-            log_list.push(l.clone());
-        }
-    }
-
-    pub fn set_state(&mut self, state: State) {
-        self.state = state;
-        self.log(WRD_EMPTY, ErrMsg::MsgStaChg(self.write_queue.len()));
-    }
-
-    pub fn act_bc2rt(&mut self, dest: u8, data: &Vec<u32>) {
-        self.set_state(State::BusyTrx);
-        self.write(Word::new_cmd(dest, data.len() as u8, TR::Receive));
-        for d in data {
-            self.write(Word::new_data(*d));
-        }
-        self.set_state(State::AwtStsRcvB2R(dest));
-        self.delta_t_start = self.clock.elapsed().as_nanos();
-    }
-    pub fn act_rt2bc(&mut self, src: u8, dword_count: u8) {
-        self.set_state(State::BusyTrx);
-        self.write(Word::new_cmd(src, dword_count, TR::Transmit));
-        // expecting to recieve dword_count number of words
-        self.dword_count_expected = dword_count;
-        self.set_state(State::AwtStsTrxR2B(src));
-        self.delta_t_start = self.clock.elapsed().as_nanos();
-    }
-    pub fn act_rt2rt(&mut self, src: u8, dst: u8, dword_count: u8) {
-        self.set_state(State::BusyTrx);
-        self.write(Word::new_cmd(dst, dword_count, TR::Receive));
-        self.write(Word::new_cmd(src, dword_count, TR::Transmit));
-        // expecting to recieve dword_count number of words
-        self.set_state(State::AwtStsTrxR2R(src, dst));
-        self.delta_t_start = self.clock.elapsed().as_nanos();
-    }
-}
-
-impl fmt::Display for Device {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}{}-{}", self.mode, self.address, self.state)
-    }
-}
-
 pub struct System {
     pub n_devices: u32,
     pub max_devices: u32,
-    pub transmitters: Vec<Sender<Word>>,
-    pub receivers: Vec<Receiver<Word>>,
+    pub transmitters: Vec<Sender<(u128, Word)>>,
+    pub receivers: Vec<Receiver<(u128, Word)>>,
     pub clock: Instant,
     pub go: Arc<AtomicBool>,
     pub exit: Arc<AtomicBool>,
@@ -656,8 +94,11 @@ impl System {
 
         // println!("Merging logs...");
         for device_mx in &self.devices {
-            let device = device_mx.lock().unwrap();
-            device.log_merge(&mut self.logs);
+            let device = device_mx.lock();
+            match device {
+                Ok(device) => device.log_merge(&mut self.logs),
+                Err(_) => println!("Error flushing log on device"),
+            }
         }
 
         self.logs.sort_by_key(|k| k.0);
@@ -677,6 +118,7 @@ impl System {
     pub fn sleep_ms(&mut self, ms: u64) {
         thread::sleep(Duration::from_millis(ms));
     }
+
     pub fn run_d<K: Scheduler + 'static, V: EventHandler + 'static>(
         &mut self,
         addr: u8,
@@ -699,6 +141,8 @@ impl System {
             atk_type: atk_type,
             ccmd: 0,
             state: State::Idle,
+            error_bit: false,
+            service_request: false,
             mode: mode,
             memory: Vec::new(),
             logs: Vec::new(),
@@ -710,8 +154,8 @@ impl System {
             dword_count_expected: 0,
             clock: self.clock,
             transmitters: transmitters,
-            write_queue: Vec::new(),
-            read_queue: Vec::new(),
+            write_queue: LinkedList::new(),
+            read_queue: LinkedList::new(),
             receiver: receiver,
             delta_t_avg: 0,
             delta_t_count: 0,
@@ -727,146 +171,112 @@ impl System {
         let device_mtx_thread_local = device_mtx.clone();
         let device_router = Arc::clone(&router);
         self.devices.push(device_mtx.clone());
+        let temp_mtx = device_mtx.clone();
+        let mut temp_dev = temp_mtx.lock().unwrap();
+        temp_dev.log(WRD_EMPTY, ErrMsg::MsgAttk("Thread starting".to_string()));
         let h = thread::Builder::new()
             .name(format!("{}", device_name).to_string())
             .spawn(move || {
-                let spin_sleeper = spin_sleep::SpinSleeper::new(1000);
+                let spin_sleeper = spin_sleep::SpinSleeper::new(1_000);
                 let mut local_router = device_router.lock().unwrap();
                 // read_time, valid message flag, word
                 let mut prev_word = (0, false, WRD_EMPTY);
                 // lock the device object - release only after thread shutdown:
                 let mut device = device_mtx_thread_local.lock().unwrap();
-
+                let mut time_bus_available = 0;
+                let mut wq = device.write_queue.len();
                 loop {
                     if !go.load(Ordering::Relaxed) || device.state == State::Off {
                         spin_sleeper.sleep_ns(1000_000);
                     }
                     if device.state != State::Off {
-                        if device.mode == Mode::BC && device.state == State::Idle {
-                            device.log(WRD_EMPTY, ErrMsg::MsgBCReady);
-                            local_router.scheduler.on_bc_ready(&mut device);
+                        if device.mode == Mode::BC {
+                            if device.state == State::Idle {
+                                device.log(WRD_EMPTY, ErrMsg::MsgBCReady);
+                                local_router.scheduler.on_bc_ready(&mut device);
+                            } else if local_router.scheduler.bus_available() < device.clock.elapsed().as_nanos() {
+                                device.log(WRD_EMPTY, ErrMsg::MsgAttk("timeout reached".to_string()));
+                                device.set_state(State::Idle);
+                            }
                         }
-                        // if device.mode == Mode::BC{
-                        //     println!("here")
-                        // }
 
                         // write is `asynchrnoized`
-                        let wq = device.write_queue.len();
-                        let current = device.clock.elapsed().as_nanos();
-                        if wq > 0 {
-                            // let mut w_logs = Vec::new();
-                            for entry in device.write_queue.clone().iter() {
-                                // if now it is the time to actually write
-                                if entry.0 <= current {
-                                    // log can be slower than write ...
-                                    device.log(entry.1, ErrMsg::MsgWrt(wq));
-                                    for (i, s) in device.transmitters.iter().enumerate() {
-                                        if (i as u32) != device.id {
-                                            let _e = s.try_send(entry.1);
-                                            // s.send(val);
-                                        }
-                                    }
-                                    // w_logs.push((entry.1, ErrMsg::MsgWrt));
+                        let mut current: u128 = device.clock.elapsed().as_nanos();
+                        wq = device.write_queue.len();
+                        while device.write_queue.len() > 0 && device.write_queue.front().unwrap().0 <= current {
+                            let entry = device.write_queue.pop_front().unwrap();
+                            // log can be slower than write ...
+                            let wq = device.write_queue.len();
+                            device.log_at(entry.0/1000, entry.1, ErrMsg::MsgWrt(wq));
+                            for (i, s) in device.transmitters.iter().enumerate() {
+                                if (i as u32) != device.id {
+                                    let _e = s.try_send(entry);
+                                    time_bus_available = entry.0 + w_delay;
+                                    // s.send(val);
                                 }
                             }
-                            // for wl in w_logs {
-                            //     device.log(wl.0, wl.1);
-                            // }
-                            // clearing all the data (otherwise delta_t keeps increasing)
-                            device.write_queue.retain(|x| (*x).0 > current);
-                            if device.write_queue.len() == 0 {
-                                device.number_of_current_cmd = 0;
-                            }
-                            // device.write_queue.clear();
+                            // w_logs.push((entry.1, ErrMsg::MsgWrt));
                         }
 
-                        let word_load_time = 0; //20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
-                        let res = device.read();
-                        if !res.is_err() {
-                            if prev_word.0 == 0 {
-                                // empty cache, do replacement
-                                prev_word = (current, true, res.unwrap());
-                            } else if current - prev_word.0 < word_load_time {
-                                // collision
-                                let mut w = res.unwrap();
-                                if w.address() == device.address {
-                                    if prev_word.1 {
+                        let mut res: Result<(u128, Word), TryRecvError>;
+                        // if prev_word.0 == 0 {
+                        //     res = device.maybe_block_read(); // Adding this line was marginally faster.  It may slow things down on a more capable computer.
+                        // } else {                             // This did slow things down on a faster computer.  By a significant margin.  Likely from context switching.
+                            res = device.read();
+                        // }
+                        match res {
+                            Ok(mut msg) => {
+                                let (time, mut word) = msg;
+                                if device.read_queue.is_empty() {
+                                    // empty cache, do replacement
+                                    if (time as i128 - time_bus_available as i128) < 0 { // We were transmitting when they started
+                                        device.read_queue.push_back((time, word, false));
+                                    } else {
+                                        device.read_queue.push_back((time, word, true));
+                                    }
+                                } else if time - device.read_queue.back().unwrap().0 < COLLISION_TIME {
+                                    // collision
+                                    if device.read_queue.back().unwrap().2 {
                                         // if previous word is a valid message then file parity error
                                         // if not, the error was already filed.
-                                        local_router
-                                            .handler
-                                            .on_err_parity(&mut device, &mut prev_word.2);
+                                        device.read_queue.back_mut().unwrap().2 = false;
                                     }
-                                    local_router.handler.on_err_parity(&mut device, &mut w);
+                                    // local_router.handler.on_err_parity(&mut device, &mut w);
+                                    // replaced with new timestamp, and invalid message flag (collided)
+                                    device.read_queue.push_back((time, word, false));
+                                } else {
+                                    device.read_queue.push_back((time, word, true));
                                 }
-                                // replaced with new timestamp, and invalid message flag (collided)
-                                prev_word = (current, false, w);
+                            },
+                            Err(msg) => {
+                                if msg != TryRecvError::Empty {
+                                    device.log(WRD_EMPTY, ErrMsg::MsgAttk("ReadErr".to_string()));
+                                }
                             }
                         }
-                        if prev_word.1 && current >= prev_word.0 + word_load_time {
-                            // message in the cache is valid & after word_time . processe the word.
-                            let mut w = prev_word.2;
-                            if w.sync() == 1 {
-                                if w.instrumentation_bit() == 1 {
-                                    local_router.handler.on_cmd(&mut device, &mut w)
+                        while !device.read_queue.is_empty() && device.read_queue.front().unwrap().0 <= current - WORD_LOAD_TIME {
+                            let (time, mut word, valid) = device.read_queue.pop_front().unwrap();
+                            if !valid {
+                                local_router.handler.on_err_parity(&mut device, &mut word);
+                            } else if word.sync() == 1 {
+                                // device.ensure_idle();
+                                if word.instrumentation_bit() == 1 {
+                                    local_router.handler.on_cmd(&mut device, &mut word)
                                 } else {
                                     // status word
-                                    local_router.handler.on_sts(&mut device, &mut w);
+                                    local_router.handler.on_sts(&mut device, &mut word);
+                                    if word.service_request_bit() != 0 {
+                                        local_router.scheduler.request_sr(word.address());
+                                    }
+                                    if word.message_errorbit() != 0{
+                                        local_router.scheduler.error_bit();
+                                    }
                                 }
                             } else {
                                 // data word
-                                local_router.handler.on_dat(&mut device, &mut w);
+                                local_router.handler.on_dat(&mut device, &mut word);
                             }
-                            // clear cache
-                            prev_word = (0, false, WRD_EMPTY);
                         }
-                        //     if !res.is_err() {
-                        //         let current = device.clock.elapsed().as_nanos();
-                        //         let mut w = res.unwrap();
-                        //         let collision: bool;
-                        //         let elements = device.read_queue.len();
-                        //         if elements > 0
-                        //             && device.read_queue[elements - 1].0 > current - word_time
-                        //         {
-                        //             // if the message was received before the previous message finished
-                        //             collision = true; // we need to acknowledge that there was a collision.  Parity error should only happen 50% of the time, but we'll say it always happens.
-                        //             device.read_queue[elements - 1].2 = true; // ensure the previous message is marked as a collision
-                        //         } else {
-                        //             collision = false;
-                        //         }
-                        //         device.read_queue.push((current, w, collision));
-                        //         handler.on_wrd_rec(&mut device, &mut w);
-                        //     }
-                        //     let rq = device.read_queue.clone(); // clone to avoid mutable vs immutable borrows
-                        //     if rq.len() > 0 {
-                        //         let current = device.clock.elapsed().as_nanos();
-                        //         for entry in rq.iter() {
-                        //             if entry.0 <= current - word_time {
-                        //                 // if the start time was 20us ago, we just finished receiving it
-                        //                 let mut w = entry.1;
-                        //                 if entry.2 {
-                        //                     // if the next message already started transmitting, before the first one finished, we get a parity error and both messages fail to deliver
-                        //                     handler.on_err_parity(&mut device, &mut w);
-                        //                 } else {
-                        //                     // Previous message was valid
-                        //                     // synchronization bit distinguishes data/(command/status) word
-                        //                     if w.sync() == 1 {
-                        //                         // device.log(w, ErrMsg::MsgEntCmd);
-                        //                         if w.instrumentation_bit() == 1 {
-                        //                             handler.on_cmd(&mut device, &mut w)
-                        //                         } else {
-                        //                             // status word
-                        //                             handler.on_sts(&mut device, &mut w);
-                        //                         }
-                        //                     } else {
-                        //                         // data word
-                        //                         handler.on_dat(&mut device, &mut w);
-                        //                     }
-                        //                 }
-                        //                 device.read_queue.retain(|x| (*x).0 > current);
-                        //             }
-                        //         }
-                        //     }
                     }
                     if exit.load(Ordering::Relaxed) {
                         //exiting
@@ -904,80 +314,6 @@ impl System {
 }
 
 #[allow(unused)]
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Proto {
-    RT2RT = 0,
-    BC2RT = 1,
-    RT2BC = 2,
-}
-
-#[derive(Clone, Debug)]
-pub struct DefaultScheduler {
-    // val: u8,
-    // path: String,
-    // data: Vec<u32>
-    pub total_device: u8,
-    pub target: u8,
-    pub data: Vec<u32>,
-    pub proto: Proto,
-    pub proto_rotate: bool,
-}
-
-impl Scheduler for DefaultScheduler {
-    fn on_bc_ready(&mut self, d: &mut Device) {
-        self.target = self.target % (self.total_device - 1) + 1;
-        let another_target = self.target % (self.total_device - 1) + 1;
-        //
-        // d.act_rt2bc(self.target, self.data.len() as u8);
-        // a simple rotating scheduler
-        match self.proto {
-            Proto::RT2RT => {
-                d.act_rt2rt(self.target, another_target, self.data.len() as u8);
-                if self.proto_rotate {
-                    self.proto = Proto::BC2RT;
-                }
-            }
-            Proto::BC2RT => {
-                d.act_bc2rt(self.target, &self.data);
-                if self.proto_rotate {
-                    self.proto = Proto::RT2BC;
-                }
-            }
-            Proto::RT2BC => {
-                d.act_rt2bc(self.target, self.data.len() as u8);
-                if self.proto_rotate {
-                    self.proto = Proto::RT2RT;
-                }
-            }
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct EmptyScheduler {}
-impl Scheduler for EmptyScheduler {}
-
-#[derive(Clone, Debug)]
-pub struct DefaultEventHandler {}
-
-impl EventHandler for DefaultEventHandler {}
-
-#[allow(unused)]
-#[derive(Clone, Debug, Copy, PartialEq)]
-pub enum AttackType {
-    Benign = 0,
-    AtkCollisionAttackAgainstTheBus = 1,
-    AtkCollisionAttackAgainstAnRT = 2,
-    AtkDataThrashingAgainstRT = 3,
-    AtkMITMAttackOnRTs = 4,
-    AtkShutdownAttackRT = 5,
-    AtkFakeStatusReccmd = 6,
-    AtkFakeStatusTrcmd = 7,
-    AtkDesynchronizationAttackOnRT = 8,
-    AtkDataCorruptionAttack = 9,
-    AtkCommandInvalidationAttack = 10,
-}
-
 pub fn eval_sys(w_delays: u128, n_devices: u8, proto: Proto, proto_rotate: bool) -> System {
     // let n_devices = 3;
     // let w_delays = w_delays;

@@ -1,7 +1,8 @@
-use crate::sys::{
-    AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
-    EventHandler, Mode, Proto, Router, State, System, Word, TR, WRD_EMPTY, ClearCache
-};
+use crate::sys::{Router, System};
+use crate::schedulers::{DefaultScheduler, EmptyScheduler, Proto};
+use crate::devices::{Device, format_log};
+use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS, ModeCode};
+use crate::event_handlers::{EventHandler, DefaultEventHandler};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -16,9 +17,9 @@ pub struct DataThrashingAgainstRT {
 impl DataThrashingAgainstRT {
     fn inject_words(&mut self, d: &mut Device) {
         self.attack_times.push(d.clock.elapsed().as_nanos());
-        let mode_code = ClearCache;
+        let mode_code = ModeCode::ClearCache;
         let tr = TR::Receive;
-        let mut w = Word::new_cmd(self.target, mode_code, tr);
+        let mut w = Word::new_cmd(self.target, mode_code as u8, tr);
         w.set_mode(1);
         d.write(w);
         self.success = true;
@@ -48,7 +49,7 @@ impl DataThrashingAgainstRT {
             }
         }
 
-        return return false;
+        return false;
     }
 }
 

@@ -1,7 +1,8 @@
-use crate::sys::{
-    AttackType, DefaultEventHandler, DefaultScheduler, Device, ErrMsg, EventHandler, Mode, Proto,
-    Router, System, Word, WRD_EMPTY,
-};
+use crate::sys::{Router, System};
+use crate::schedulers::{DefaultScheduler, EmptyScheduler, Proto};
+use crate::devices::{Device, format_log};
+use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS};
+use crate::event_handlers::{EventHandler, DefaultEventHandler};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -18,7 +19,7 @@ impl CollisionAttackAgainstTheBus {
             self.success = true;
         }
         for i in 0..self.nwords_inj {
-            let w = Word::new_data(i as u32);
+            let w = Word::new_data(i as u16);
             d.log(
                 WRD_EMPTY,
                 ErrMsg::MsgAttk(format!("Sent Fake Data {} ", w).to_string()),

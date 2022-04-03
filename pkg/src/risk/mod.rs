@@ -3,11 +3,14 @@ use crate::attacks::attack3::eval_attack3;
 use crate::attacks::attack6::eval_attack6;
 use crate::attacks::attack7::eval_attack7;
 use crate::attacks::attack9::eval_attack9;
-use crate::sys::{
-    format_log, AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
-    EventHandler, Mode, Proto, Router, State, System, Word, WRD_EMPTY,
-};
+#[allow(unused)]
+use crate::sys::{Router, System};
+use crate::schedulers::{DefaultScheduler, EmptyScheduler, Proto};
+use crate::devices::{Device, format_log};
+use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word};
+use crate::event_handlers::{EventHandler, DefaultEventHandler};
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
+#[allow(unused)]
 use std::thread;
 /*
 We have 8 attack vectors:
@@ -32,6 +35,7 @@ Attack_08.py is desynchronization attack against an RT, which is AV2.
 * Attack_10.py is a command invalidation attack, which is AV5 (RT2BC and RT2RT).
 
 */
+#[allow(non_camel_case_types)]
 #[derive(Debug)]
 pub enum AttackVector {
     AV4_RT2BC, //attack 9
@@ -44,6 +48,7 @@ pub enum AttackVector {
     AV7_RT2BC, //attack 7
 }
 
+#[allow(unused)]
 pub fn eval_attack_prob(attack_vector: AttackVector) -> (AttackVector, Vec<u128>, Vec<f32>) {
     let num_sims = 500;
     let start = 4_000;
@@ -111,6 +116,7 @@ pub fn eval_attack_prob(attack_vector: AttackVector) -> (AttackVector, Vec<u128>
     return (attack_vector, delays, probs);
 }
 
+#[allow(unused)]
 pub fn eval_all() {
     let mut result = vec![];
     // result.push(eval_attack_prob(AttackVector::AV4_RT2BC));

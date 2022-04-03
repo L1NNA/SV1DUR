@@ -1,7 +1,8 @@
-use crate::sys::{
-    format_log, AttackType, DefaultEventHandler, DefaultScheduler, Device, EmptyScheduler, ErrMsg,
-    EventHandler, Mode, Proto, Router, State, System, Word, WRD_EMPTY, TR
-};
+use crate::sys::{Router, System};
+use crate::schedulers::{DefaultScheduler, EmptyScheduler, Proto};
+use crate::devices::Device;
+use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS};
+use crate::event_handlers::{EventHandler, DefaultEventHandler};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -16,7 +17,7 @@ pub struct DataCorruptionAttack {
 impl DataCorruptionAttack {
     pub fn inject(&mut self, d: &mut Device) {
         self.attack_times.push(d.clock.elapsed().as_nanos());
-        let w = Word::new_status(self.target);
+        let w = Word::new_malicious_status(self.target);
         d.write(w);
         for _ in 0..self.word_count {
             let w = Word::new_data(0x7171);
@@ -46,14 +47,17 @@ impl DataCorruptionAttack {
             if l.6 == ErrMsg::MsgBCReady {
                 recieved_faked = 0;
             }
-            if l.6 == ErrMsg::MsgEntDat
-                && l.5.attk() == (AttackType::AtkDataCorruptionAttack as u32)
-            {
-                // println!("{} {}/{}", format_log(&l), recieved_faked, self.word_count);
-                recieved_faked += 1;
-                if recieved_faked == self.word_count {
-                    return true;
-                }
+            match l.6 {
+                ErrMsg::MsgEntDat(_, _) => { 
+                    if l.5.attk() == (AttackType::AtkDataCorruptionAttack as u8) {
+                        // println!("{} {}/{}", format_log(&l), recieved_faked, self.word_count);
+                        recieved_faked += 1;
+                        if recieved_faked == self.word_count {
+                            return true;
+                        }
+                    }
+                },
+                _ => {}
             }
         }
         return false;
