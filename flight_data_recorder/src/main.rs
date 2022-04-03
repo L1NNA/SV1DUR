@@ -105,7 +105,7 @@ define_units! {
     Position32k: INT64 = "position 32K", // 32 bit int
     Position128: INT64 = "position 128", // Value between 0 - 128
 
-    PercentOver100: FLOAT64 = "percent over 100",
+    Percent: FLOAT64 = "percent",
 }
 
 macro_rules! define_sensors {
@@ -214,13 +214,14 @@ define_sensors! {
     brakes_right_position <- "BRAKES RIGHT POSITION" in Position as Float;
     brakes_left_position <- "BRAKES LEFT POSITION" in Position as Float;
 
-    throttle_level_position1 <- "GENERAL ENG THROTTLE LEVER POSITION:1" in PercentOver100 as Float;
+    throttle_level_position1 <- "GENERAL ENG THROTTLE LEVER POSITION:1" in Percent as Float;
 
     spoiler_handle_position <- "SPOILER HANDLE POSITION" in Position as Float;
     spoiler_right_position <- "SPOILER RIGHT POSITION" in Position as Float;
     spoiler_left_position <- "SPOILER LEFT POSITION" in Position as Float;
 
-    flaps_handle_percent <- "FLAPS HANDLE POSITION" in PercentOver100 as Float;
+    flaps_handle_index <- "FLAPS HANDLE INDEX" in Number as Integer;
+    flaps_num_handle_positions <- "FLAPS NUM HANDLE POSITIONS" in Number as Integer;
 
     // INSTRUMENT CLUSTER
     indicated_airspeed <- "AIRSPEED INDICATED" in Knots as Float;
