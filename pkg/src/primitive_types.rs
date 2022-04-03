@@ -10,6 +10,19 @@ pub const BROADCAST_ADDRESS: u8 = 31;
 pub const WORD_LOAD_TIME: u128 = 20_000;
 pub const COLLISION_TIME: u128 = WORD_LOAD_TIME;
 
+#[repr(u8)]
+pub enum ModeCode {
+    TXshutdown = 4,
+    Synchronization = 17,
+    ClearCache = 30,
+}
+
+impl Into<u8> for ModeCode {
+    fn into(self) -> u8 {
+        return self as u8
+    }
+}
+
 bitfield! {
     #[derive(Copy, Clone)]
     pub struct Word(u32);
