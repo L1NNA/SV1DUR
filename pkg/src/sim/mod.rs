@@ -486,7 +486,7 @@ impl EventHandler for FighterBCScheduler {
                 let mut current = d.clock.elapsed().as_nanos();
                 if time >= current {
                     let wait = time - current;
-                    spin_sleeper.sleep_ns(wait.try_into().unwrap());
+                    // spin_sleeper.sleep_ns(wait.try_into().unwrap());
                     current = d.clock.elapsed().as_nanos();
                 }
                 match (src, dst) {
@@ -588,6 +588,7 @@ pub struct FighterDeviceEventHandler {
     current_data: Option<Vec<u16>>,
     latest_timestamp: u128,
     destination: Option<Address>,
+    pub total_recv_count: u32,
 }
 
 impl FighterDeviceEventHandler {
@@ -628,6 +629,7 @@ impl FighterDeviceEventHandler {
             current_data: None,
             latest_timestamp: 0,
             destination: None,
+            total_recv_count: 0,
         };
         handler
     }
@@ -644,9 +646,15 @@ impl EventHandler for FighterDeviceEventHandler {
     }
     fn on_memory_ready(&mut self, d: &mut Device) {
         // data ready in memory
+        self.total_recv_count += 1;
+        let current_herz =
+            ((self.total_recv_count * 1_000_000) as f64) / (d.clock.elapsed().as_micros() as f64);
         d.log(
             WRD_EMPTY,
-            ErrMsg::MsgFlight(format!("{:?} Recieved {:?}", self.address, d.memory)),
+            ErrMsg::MsgFlight(format!(
+                "{:.4} Hz {:?} Recieved {:?}",
+                current_herz, self.address, d.memory
+            )),
         );
     }
     fn on_data_write(&mut self, d: &mut Device, dword_count: u8) {
