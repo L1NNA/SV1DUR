@@ -1,4 +1,4 @@
-use crate::primitive_types::{Word, ErrMsg, State, Mode, TR, WRD_EMPTY, BROADCAST_ADDRESS};
+use crate::primitive_types::{Word, ErrMsg, State, Mode, TR, WRD_EMPTY, BROADCAST_ADDRESS, ModeCode};
 use crate::devices::Device;
 
 pub trait EventHandler: Clone + Send {
@@ -110,13 +110,13 @@ pub trait EventHandler: Clone + Send {
             if !d.fake {
                 // actual operation not triggerred for attackers
                 // mode code match for command:
-                match w.mode_code() {
-                    4 => {
+                match ModeCode::from(w.mode_code()) {
+                    ModeCode::TXshutdown => {
                         // Mode code for TX shutdown
                         d.reset_all_stateful();
                         d.set_state(State::Off);
                     }
-                    17 => {
+                    ModeCode::Synchronization => {
                         // synchronization
                         // ccmd indicating that the next data word
                         // is related to the current command
@@ -124,7 +124,7 @@ pub trait EventHandler: Clone + Send {
                         d.ccmd = 1;
                         d.set_state(State::AwtData);
                     }
-                    30 => {
+                    ModeCode::ClearCache => {
                         // clear cache (only when it is recieving data)
                         d.log(WRD_EMPTY, ErrMsg::MsgMCXClr(d.memory.len()));
                         d.reset_all_stateful();
@@ -132,7 +132,7 @@ pub trait EventHandler: Clone + Send {
                         // clear write queue (cancel the status words to be sent)
                         d.write_queue.clear();
                     }
-                    31 => {
+                    ModeCode::CancelCommand => {
                         // cancel operation
                         d.set_state(State::Idle);
                     }

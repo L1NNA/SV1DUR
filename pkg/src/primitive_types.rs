@@ -12,14 +12,29 @@ pub const COLLISION_TIME: u128 = WORD_LOAD_TIME;
 
 #[repr(u8)]
 pub enum ModeCode {
+    NoCode,
     TXshutdown = 4,
     Synchronization = 17,
     ClearCache = 30,
+    CancelCommand = 31,
 }
 
 impl Into<u8> for ModeCode {
     fn into(self) -> u8 {
         return self as u8
+    }
+}
+
+impl From<u8> for ModeCode {
+    fn from(value: u8) -> Self {
+        use ModeCode::*;
+        match value {
+            value if value == TXshutdown as u8 => TXshutdown,
+            value if value == Synchronization as u8 => Synchronization,
+            value if value == ClearCache as u8 => ClearCache,
+            value if value == CancelCommand as u8 => CancelCommand,
+            _ => NoCode,
+        }
     }
 }
 
