@@ -73,7 +73,7 @@ macro_rules! define_units {
 
 define_units! {
     Bool: INT64 = "bool",
-    Number: INT64 = "number",
+    Number: FLOAT64 = "number",
 
     Hours: INT64 = "hours",
     Minutes: INT64 = "minutes",
@@ -102,7 +102,7 @@ define_units! {
     Gallons: FLOAT64 = "gallons",
 
     // Apparently there is a difference between these units
-    Position: INT64 = "position", // "Part" base scale
+    Position: INT64 = "position", // "Part" base scale (Not sure if FLOAT64)
     Position16k: INT64 = "position 16K", // 16 bit int
     Position32k: INT64 = "position 32K", // 32 bit int
     Position128: INT64 = "position 128", // Value between 0 - 128
@@ -204,26 +204,31 @@ define_sensors! {
     absolute_time <- "ABSOLUTE TIME" in Seconds as Integer;
 
     // CONTROL INFORMATION
-    yoke_x_position <- "YOKE X POSITION" in Position as Float;
-    yoke_y_position <- "YOKE Y POSITION" in Position as Float;
-    yoke_x_indicator <- "YOKE X INDICATOR" in Position as Float;
-    yoke_y_indicator <- "YOKE Y INDICATOR" in Position as Float;
+    yoke_x_position <- "YOKE X POSITION" in Position as Integer;
+    yoke_y_position <- "YOKE Y POSITION" in Position as Integer;
+
+    yoke_x_position_ap <- "YOKE X POSITION WITH AP" in Position as Integer;
+    yoke_y_position_ap <- "YOKE Y POSITION WITH AP" in Position as Integer;
+
+    yoke_x_indicator <- "YOKE X INDICATOR" in Position as Integer;
+    yoke_y_indicator <- "YOKE Y INDICATOR" in Position as Integer;
 
     rudder_position <- "RUDDER POSITION" in Position as Float;
-    rudder_pedal_position <- "RUDDER PEDAL POSITION" in Position as Float;
-    rudder_pedal_indicator <- "RUDDER PEDAL INDICATOR" in Position as Float;
+    rudder_pedal_position <- "RUDDER PEDAL POSITION" in Position as Integer;
+    rudder_pedal_indicator <- "RUDDER PEDAL INDICATOR" in Position as Integer;
 
-    brake_right_position <- "BRAKE RIGHT POSITION" in Position as Float;
-    brake_left_position <- "BRAKE LEFT POSITION" in Position as Float;
+    brake_right_position <- "BRAKE RIGHT POSITION" in Position as Integer;
+    brake_left_position <- "BRAKE LEFT POSITION" in Position as Integer;
 
     throttle_level_position1 <- "GENERAL ENG THROTTLE LEVER POSITION:1" in Percent as Float;
+    throttle_level_position2 <- "GENERAL ENG THROTTLE LEVER POSITION:2" in Percent as Float;
 
     spoiler_handle_position <- "SPOILERS HANDLE POSITION" in Position as Float;
     spoiler_right_position <- "SPOILERS RIGHT POSITION" in Percent as Float;
     spoiler_left_position <- "SPOILERS LEFT POSITION" in Percent as Float;
 
-    flaps_handle_index <- "FLAPS HANDLE INDEX" in Number as Integer;
-    flaps_num_handle_positions <- "FLAPS NUM HANDLE POSITIONS" in Number as Integer;
+    flaps_handle_index <- "FLAPS HANDLE INDEX" in Number as Float;
+    flaps_num_handle_positions <- "FLAPS NUM HANDLE POSITIONS" in Number as Float;
 
     // INSTRUMENT CLUSTER
     indicated_airspeed <- "AIRSPEED INDICATED" in Knots as Float;
