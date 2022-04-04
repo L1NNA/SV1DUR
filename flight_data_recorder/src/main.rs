@@ -72,7 +72,8 @@ macro_rules! define_units {
 }
 
 define_units! {
-    Bool: INT64 = "Bool",
+    Bool: INT64 = "bool",
+    Number: INT64 = "number",
 
     Hours: INT64 = "hours",
     Minutes: INT64 = "minutes",
@@ -337,7 +338,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //sim_conn.subscribe_to_system_event(SYSTEM_EVENT_ID_PAUSE, "Paused");
 
     unsafe {
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL as i32);
     }
 
     println!("Recording in progress. Exit or stop simulator to quit.");
