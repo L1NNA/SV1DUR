@@ -44,8 +44,8 @@ pub struct Device {
     pub clock: Instant,
     pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
     pub transmitters: Vec<Sender<(u128, Word)>>,
-    pub read_queue: LinkedList<(u128, Word, bool)>,
-    pub write_queue: LinkedList<(u128, Word)>,
+    pub read_queue: Vec<(u128, Word, bool)>,
+    pub write_queue: Vec<(u128, Word)>,
     pub write_delays: u128,
     pub receiver: Receiver<(u128, Word)>,
     pub delta_t_avg: u128,
@@ -67,11 +67,11 @@ impl Device {
         }
         if self.write_queue.len() < 1 {
             self.write_queue
-                .push_back((self.clock.elapsed().as_nanos(), val));
+                .push((self.clock.elapsed().as_nanos(), val));
         } else {
             // println!("here {} {} {:?}, {}", self, self.write_queue.len(), self.write_queue.last().unwrap().0, self.write_delays);
             self.write_queue
-                .push_back((self.write_queue.back().unwrap().0 + self.write_delays, val));
+                .push((self.write_queue.last().unwrap().0 + self.write_delays, val));
         }
         // let transmitters = self.transmitters.clone();
         // let id = self.id.clone();

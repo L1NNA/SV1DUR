@@ -165,8 +165,8 @@ impl System {
             dword_count_expected: 0,
             clock: self.clock,
             transmitters: transmitters,
-            write_queue: LinkedList::new(),
-            read_queue: LinkedList::new(),
+            write_queue: Vec::new(),
+            read_queue: Vec::new(),
             receiver: receiver,
             delta_t_avg: 0,
             delta_t_count: 0,
@@ -215,89 +215,175 @@ impl System {
                             // }
                         }
 
+                        // // write is `asynchrnoized`
+                        // let mut current: u128 = device.clock.elapsed().as_nanos();
+                        // wq = device.write_queue.len();
+                        // while device.write_queue.len() > 0 && device.write_queue.front().unwrap().0 <= current {
+                        //     let entry = device.write_queue.pop_front().unwrap();
+                        //     // log can be slower than write ...
+                        //     let wq = device.write_queue.len();
+                        //     device.log_at(entry.0/1000, entry.1, ErrMsg::MsgWrt(wq));
+                        //     for (i, s) in device.transmitters.iter().enumerate() {
+                        //         if (i as u32) != device.id {
+                        //             let _e = s.try_send(entry);
+                        //             time_bus_available = entry.0 + w_delay;
+                        //             // s.send(val);
+                        //         }
+                        //     }
+                        //     // w_logs.push((entry.1, ErrMsg::MsgWrt));
+                        // }
+
                         // write is `asynchrnoized`
-                        let mut current: u128 = device.clock.elapsed().as_nanos();
-                        wq = device.write_queue.len();
-                        while device.write_queue.len() > 0 && device.write_queue.front().unwrap().0 <= current {
-                            let entry = device.write_queue.pop_front().unwrap();
-                            // log can be slower than write ...
-                            let wq = device.write_queue.len();
-                            device.log_at(entry.0/1000, entry.1, ErrMsg::MsgWrt(wq));
-                            for (i, s) in device.transmitters.iter().enumerate() {
-                                if (i as u32) != device.id {
-                                    let _e = s.try_send(entry);
-                                    time_bus_available = entry.0 + w_delay;
-                                    // s.send(val);
+                        let wq = device.write_queue.len();
+                        let current = device.clock.elapsed().as_nanos();
+                        if wq > 0 {
+                            // let mut w_logs = Vec::new();
+                            for entry in device.write_queue.clone().iter() {
+                                // if now it is the time to actually write
+                                if entry.0 <= current {
+                                    // log can be slower than write ...
+                                    device.log_at(entry.0/1000, entry.1, ErrMsg::MsgWrt(wq));
+                                    for (i, s) in device.transmitters.iter().enumerate() {
+                                        if (i as u32) != device.id {
+                                            let _e = s.try_send(*entry);
+                                            // s.send(val);
+                                        }
+                                    }
+                                    // w_logs.push((entry.1, ErrMsg::MsgWrt));
                                 }
                             }
-                            // w_logs.push((entry.1, ErrMsg::MsgWrt));
+                            // for wl in w_logs {
+                            //     device.log(wl.0, wl.1);
+                            // }
+                            // clearing all the data (otherwise delta_t keeps increasing)
+                            device.write_queue.retain(|x| (*x).0 > current);
+                            if device.write_queue.len() == 0 {
+                                device.number_of_current_cmd = 0;
+                            }
+                            // device.write_queue.clear();
                         }
 
-                        let mut res: Result<(u128, Word), TryRecvError>;
-                        // if prev_word.0 == 0 {
-                        //     res = device.maybe_block_read(); // Adding this line was marginally faster.  It may slow things down on a more capable computer.
-                        // } else {                             // This did slow things down on a faster computer.  By a significant margin.  Likely from context switching.
-                            res = device.read();
-                        // }
-                        match res {
-                            Ok(mut msg) => {
-                                let (time, mut word) = msg;
-                                if device.read_queue.is_empty() {
-                                    // empty cache, do replacement
-                                    if (time as i128 - time_bus_available as i128) < 0 { // We were transmitting when they started
-                                        device.read_queue.push_back((time, word, false));
-                                    } else {
-                                        device.read_queue.push_back((time, word, true));
+                        let res = device.read();
+                        if !res.is_err() {
+                            let (time, mut word) = res.unwrap();
+                            if prev_word.0 == 0 {
+                                // empty cache, do replacement
+                                prev_word = (time, true, word);
+                            } else if time - prev_word.0 < WORD_LOAD_TIME {
+                                // collision
+                                let mut w = res.unwrap();
+                                if word.address() == device.address {
+                                    let mut local_emitter = device_handler_emitter.lock().unwrap();
+                                    let new_atk_type = local_emitter.handler.get_attk_type();
+                                    if new_atk_type != device.atk_type {
+                                        // new handler
+                                        device.reset_all_stateful();
+                                        device.atk_type = new_atk_type;
                                     }
-                                } else if time - device.read_queue.back().unwrap().0 < COLLISION_TIME {
-                                    // collision
-                                    if device.read_queue.back().unwrap().2 {
+                                    if prev_word.1 {
                                         // if previous word is a valid message then file parity error
                                         // if not, the error was already filed.
-                                        device.read_queue.back_mut().unwrap().2 = false;
+                                        local_emitter
+                                            .handler
+                                            .on_err_parity(&mut device, &mut prev_word.2);
                                     }
-                                    // local_router.handler.on_err_parity(&mut device, &mut w);
-                                    // replaced with new timestamp, and invalid message flag (collided)
-                                    device.read_queue.push_back((time, word, false));
-                                } else {
-                                    device.read_queue.push_back((time, word, true));
+                                    local_emitter.handler.on_err_parity(&mut device, &mut word);
                                 }
-                            },
-                            Err(msg) => {
-                                if msg != TryRecvError::Empty {
-                                    device.log(WRD_EMPTY, ErrMsg::MsgAttk("ReadErr".to_string()));
-                                }
+                                // replaced with new timestamp, and invalid message flag (collided)
+                                prev_word = (current, false, word);
                             }
                         }
-                        while !device.read_queue.is_empty() && device.read_queue.front().unwrap().0 <= current - WORD_LOAD_TIME {
-                            let (time, mut word, valid) = device.read_queue.pop_front().unwrap();
+                        if prev_word.1 && current >= prev_word.0 + WORD_LOAD_TIME {
+                            // message in the cache is valid & after word_time . processe the word.
+                            let mut w = prev_word.2;
                             let mut local_emitter = device_handler_emitter.lock().unwrap();
-                            if !valid {
-                                let new_atk_type = local_emitter.handler.get_attk_type();
-                                if new_atk_type != device.atk_type {
-                                    device.reset_all_stateful();
-                                    device.atk_type = new_atk_type;
-                                }
-                                local_emitter.handler.on_err_parity(&mut device, &mut word);
-                            } else if word.sync() == 1 {
-                                // device.ensure_idle();
-                                if word.instrumentation_bit() == 1 {
-                                    local_emitter.handler.on_cmd(&mut device, &mut word)
-                                } else {
-                                    // status word
-                                    local_emitter.handler.on_sts(&mut device, &mut word);
-                                    if word.service_request_bit() != 0 {
-                                        // local_emitter.scheduler.request_sr(word.address());
-                                    }
-                                    if word.message_errorbit() != 0{
-                                        // local_emitter.scheduler.error_bit();
-                                    }
-                                }
+                            device.atk_type = local_emitter.handler.get_attk_type();
+
+                            if device.mode == Mode::BM {
+                                device.log(w, ErrMsg::MsgBMLog);
                             } else {
-                                // data word
-                                local_emitter.handler.on_dat(&mut device, &mut word);
+                                if w.sync() == 1 {
+                                    if w.instrumentation_bit() == 1 {
+                                        local_emitter.handler.on_cmd(&mut device, &mut w)
+                                    } else {
+                                        // status word
+                                        local_emitter.handler.on_sts(&mut device, &mut w);
+                                    }
+                                } else {
+                                    // data word
+                                    local_emitter.handler.on_dat(&mut device, &mut w);
+                                }
                             }
+
+                            // clear cache
+                            prev_word = (0, false, WRD_EMPTY);
                         }
+
+                        // let mut res: Result<(u128, Word), TryRecvError>;
+                        // // if prev_word.0 == 0 {
+                        // //     res = device.maybe_block_read(); // Adding this line was marginally faster.  It may slow things down on a more capable computer.
+                        // // } else {                             // This did slow things down on a faster computer.  By a significant margin.  Likely from context switching.
+                        //     res = device.read();
+                        // // }
+                        // match res {
+                        //     Ok(mut msg) => {
+                        //         let (time, mut word) = msg;
+                        //         if device.read_queue.is_empty() {
+                        //             // empty cache, do replacement
+                        //             if (time as i128 - time_bus_available as i128) < 0 { // We were transmitting when they started
+                        //                 device.read_queue.push_back((time, word, false));
+                        //             } else {
+                        //                 device.read_queue.push_back((time, word, true));
+                        //             }
+                        //         } else if time - device.read_queue.back().unwrap().0 < COLLISION_TIME {
+                        //             // collision
+                        //             if device.read_queue.back().unwrap().2 {
+                        //                 // if previous word is a valid message then file parity error
+                        //                 // if not, the error was already filed.
+                        //                 device.read_queue.back_mut().unwrap().2 = false;
+                        //             }
+                        //             // local_router.handler.on_err_parity(&mut device, &mut w);
+                        //             // replaced with new timestamp, and invalid message flag (collided)
+                        //             device.read_queue.push_back((time, word, false));
+                        //         } else {
+                        //             device.read_queue.push_back((time, word, true));
+                        //         }
+                        //     },
+                        //     Err(msg) => {
+                        //         if msg != TryRecvError::Empty {
+                        //             device.log(WRD_EMPTY, ErrMsg::MsgAttk("ReadErr".to_string()));
+                        //         }
+                        //     }
+                        // }
+                        // while !device.read_queue.is_empty() && device.read_queue.front().unwrap().0 <= current - WORD_LOAD_TIME {
+                        //     let (time, mut word, valid) = device.read_queue.pop_front().unwrap();
+                        //     let mut local_emitter = device_handler_emitter.lock().unwrap();
+                        //     if !valid {
+                        //         let new_atk_type = local_emitter.handler.get_attk_type();
+                        //         if new_atk_type != device.atk_type {
+                        //             device.reset_all_stateful();
+                        //             device.atk_type = new_atk_type;
+                        //         }
+                        //         local_emitter.handler.on_err_parity(&mut device, &mut word);
+                        //     } else if word.sync() == 1 {
+                        //         // device.ensure_idle();
+                        //         if word.instrumentation_bit() == 1 {
+                        //             local_emitter.handler.on_cmd(&mut device, &mut word)
+                        //         } else {
+                        //             // status word
+                        //             local_emitter.handler.on_sts(&mut device, &mut word);
+                        //             if word.service_request_bit() != 0 {
+                        //                 // local_emitter.scheduler.request_sr(word.address());
+                        //             }
+                        //             if word.message_errorbit() != 0{
+                        //                 // local_emitter.scheduler.error_bit();
+                        //             }
+                        //         }
+                        //     } else {
+                        //         // data word
+                        //         local_emitter.handler.on_dat(&mut device, &mut word);
+                        //     }
+                        // }
                     }
                     if exit.load(Ordering::Relaxed) {
                         //exiting
