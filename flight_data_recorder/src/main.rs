@@ -213,7 +213,7 @@ define_sensors! {
     yoke_x_indicator <- "YOKE X INDICATOR" in Position as Integer;
     yoke_y_indicator <- "YOKE Y INDICATOR" in Position as Integer;
 
-    rudder_position <- "RUDDER POSITION" in Position as Float;
+    rudder_position <- "RUDDER POSITION" in Position as Integer;
     rudder_pedal_position <- "RUDDER PEDAL POSITION" in Position as Integer;
     rudder_pedal_indicator <- "RUDDER PEDAL INDICATOR" in Position as Integer;
 
@@ -223,9 +223,9 @@ define_sensors! {
     throttle_level_position1 <- "GENERAL ENG THROTTLE LEVER POSITION:1" in Percent as Float;
     throttle_level_position2 <- "GENERAL ENG THROTTLE LEVER POSITION:2" in Percent as Float;
 
-    spoiler_handle_position <- "SPOILERS HANDLE POSITION" in Position as Float;
-    spoiler_right_position <- "SPOILERS RIGHT POSITION" in Percent as Float;
-    spoiler_left_position <- "SPOILERS LEFT POSITION" in Percent as Float;
+    spoiler_handle_position <- "SPOILERS HANDLE POSITION" in Position as Integer;
+    spoiler_right_position <- "SPOILERS RIGHT POSITION" in Percent as Integer;
+    spoiler_left_position <- "SPOILERS LEFT POSITION" in Percent as Integer;
 
     flaps_handle_index <- "FLAPS HANDLE INDEX" in Number as Float;
     flaps_num_handle_positions <- "FLAPS NUM HANDLE POSITIONS" in Number as Float;
