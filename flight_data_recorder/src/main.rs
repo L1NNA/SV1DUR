@@ -102,7 +102,7 @@ define_units! {
     Gallons: FLOAT64 = "gallons",
 
     // Apparently there is a difference between these units
-    Position: FLOAT64 = "position", // "Part" base scale
+    Position: INT64 = "position", // "Part" base scale
     Position16k: INT64 = "position 16K", // 16 bit int
     Position32k: INT64 = "position 32K", // 32 bit int
     Position128: INT64 = "position 128", // Value between 0 - 128
@@ -213,14 +213,14 @@ define_sensors! {
     rudder_pedal_position <- "RUDDER PEDAL POSITION" in Position as Float;
     rudder_pedal_indicator <- "RUDDER PEDAL INDICATOR" in Position as Float;
 
-    brakes_right_position <- "BRAKES RIGHT POSITION" in Position as Float;
-    brakes_left_position <- "BRAKES LEFT POSITION" in Position as Float;
+    brake_right_position <- "BRAKE RIGHT POSITION" in Position as Float;
+    brake_left_position <- "BRAKE LEFT POSITION" in Position as Float;
 
     throttle_level_position1 <- "GENERAL ENG THROTTLE LEVER POSITION:1" in Percent as Float;
 
     spoiler_handle_position <- "SPOILER HANDLE POSITION" in Position as Float;
-    spoiler_right_position <- "SPOILER RIGHT POSITION" in Position as Float;
-    spoiler_left_position <- "SPOILER LEFT POSITION" in Position as Float;
+    spoiler_right_position <- "SPOILER RIGHT POSITION" in Percent as Float;
+    spoiler_left_position <- "SPOILER LEFT POSITION" in Percent as Float;
 
     flaps_handle_index <- "FLAPS HANDLE INDEX" in Number as Integer;
     flaps_num_handle_positions <- "FLAPS NUM HANDLE POSITIONS" in Number as Integer;
