@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use std::thread::sleep;
 use std::mem::transmute_copy;
 use std::io::{Error, ErrorKind};
+use std::io::prelude::*;
 
 use winapi::um::processthreadsapi::{GetCurrentThread, SetThreadPriority};
 use winapi::um::winbase::THREAD_PRIORITY_TIME_CRITICAL;
@@ -283,6 +284,33 @@ define_sensors! {
     total_air_temperature <- "TOTAL AIR TEMPERATURE" in Celsius as Float;
 }
 
+struct Spinner {
+    counter: u8,
+    divider: u8,
+    index: usize
+}
+
+impl Spinner {
+    const CHARS: [char; 4] = [ '|', '/', '-', '\\' ];
+
+    fn new(divider: u8) -> Self {
+        Spinner {
+            counter: 0,
+            divider: divider,
+            index: 0
+        }
+    }
+
+    fn step(&mut self) {
+        self.counter = (self.counter + 1) % self.divider;
+        if self.counter == 0 {
+            self.index = (self.index + 1) % 4;
+            print!("\u{08}{}", Spinner::CHARS[self.index]);
+            std::io::stdout().flush().unwrap();
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sim_conn = simconnect::SimConnector::new();
 
@@ -311,6 +339,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
     }
+
+    println!("Recording in progress. Exit or stop simulator to quit.");
+    let mut spinner = Spinner::new(8);
 
     let start_instant = Instant::now();
     let mut delta_instant = Instant::now();
@@ -344,6 +375,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => ()
         }
 
+        spinner.step();
         sleep(Duration::from_millis(2));
     }
 
