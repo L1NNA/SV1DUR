@@ -23,3 +23,4 @@ num-traits = "0.2"
 num-derive = "0.3"
 rusqlite = { version = "0.27.0", features = ["bundled"] }
 libc = "0.2.121"
+rand = "0.8.5"

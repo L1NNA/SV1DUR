@@ -7,6 +7,7 @@ mod primitive_types;
 mod event_handlers;
 mod devices;
 mod terminals;
+mod schedulers; //::{Address, MsgPri, HercScheduler};
 #[allow(unused)]
 use risk::eval_all;
 #[allow(unused_imports)]
@@ -18,7 +19,6 @@ use crossbeam_channel::{bounded};
 #[allow(unused_imports)]
 use sys::{System};
 use std::time::{Instant};
-mod schedulers; //::{Address, MsgPri, HercScheduler};
 #[allow(unused_imports)]
 use schedulers::{FighterBCScheduler, Proto, eval_fighter_sim};
 use event_handlers::EventHandler; // Items in traits can only be used if the trait is in scope.
@@ -176,7 +176,8 @@ fn main() {
     // let system = eval_sys(0, 4, Proto::RT2RT, true);
 
     let word_delay = 20_000; // nanoseconds to transmit a word.
-    eval_fighter_sim("sample_data.sqlite", 20_000, 500, AttackType::Benign);
+    let run_time = 0; // in milliseconds 0 tells us to run for the entirity of the dataset.
+    eval_fighter_sim("sample_data.sqlite", word_delay, run_time, AttackType::Benign);
 
 
 }

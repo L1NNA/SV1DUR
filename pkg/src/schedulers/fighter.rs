@@ -9,9 +9,9 @@ use priority_queue::DoublePriorityQueue;
 use crate::primitive_types::{Address, MsgPri};
 use bitfield::bitfield;
 use std::collections::LinkedList;
-use rusqlite::Connection;
+use rusqlite::{Connection, Result, Error};
 use std::sync::{Arc, Mutex};
-
+use rand::{distributions::{Distribution, Standard}, Rng};
 
 #[derive(Hash, PartialEq, Eq, Copy, Clone)]
 pub struct Event {
@@ -41,6 +41,26 @@ impl SplitInt {
 
     pub fn extract(&mut self) -> Vec<u16> {
         vec![self.word1(), self.word2()]
+    }
+}
+
+impl Distribution<Address> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Address {
+        use Address::*;
+        match rng.gen_range(1..=10 as u32) {
+            1 => BusControl,
+            2 => FlightControls,
+            3 => Flaps,
+            4 => Engine,
+            5 => Rudder,
+            6 => Ailerons,
+            7 => Elevators,
+            8 => Spoilers,
+            9 => Fuel,
+            10 => Positioning,
+            11 => Gyro,
+            _ => Brakes,
+        }
     }
 }
 
@@ -461,7 +481,25 @@ impl EventHandler for FighterDeviceEventHandler {
     }
 }
 
-pub fn eval_fighter_sim(database: &str, w_delays: u128, run_time: u64, attack: AttackType) {
+fn get_runtime(database: &str) -> Result<u64> {
+
+    let conn = Connection::open(database)?;
+    let command = format!(
+        "SELECT MAX(elapsed_ms) FROM sensor_data"
+    );
+    let mut statement = conn.prepare(&command[..])?;
+    let mut result = statement.query([])?;
+    let row = result.next()?;
+    match row {
+        Some(row) => {
+            let runtime = row.get(0)?;
+            Ok(runtime)
+        },
+        _ => {Err(Error::InvalidQuery)}
+    }
+}
+
+pub fn eval_fighter_sim(database: &str, w_delays: u128, mut run_time: u64, attack: AttackType) {
     // let database = "sample_data.sqlite";
     let devices = vec![
         Address::BusControl,
@@ -527,16 +565,35 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, run_time: u64, attack: A
         sys.run_d(d as u8, mode, emitter, d == Address::AttackController);
     }
 
+    if run_time == 0 {
+        let dataset_length = get_runtime(database);
+        match dataset_length {
+            Ok(val) => run_time = val,
+            Err(_) => run_time = 500,
+        };
+    }
+
     let attack_time = 30;
     let keep_time = run_time - attack_time;
     sys.go();
+    let start_time = sys.clock.elapsed().as_millis();
+    let mut rng = rand::thread_rng();
+    while(sys.clock.elapsed().as_millis() < run_time as u128) {
+        let rand_num = rng.gen::<f32>();
+        if rand_num < 0.03 {
+            let attack: AttackType = rand::random();
+            let source: Address = rand::random();
+            let destination: Address = rand::random();
+            attack_controller.sabotage(
+                attack,
+                source as u8,
+                destination as u8,
+            );
+        }
+        sys.sleep_ms(50);
+    }
     sys.sleep_ms(attack_time);
     // we can add as many as attacks but some may not appear (due to the previous attacks).
-    attack_controller.sabotage(
-        attack,
-        Address::FlightControls as u8,
-        Address::FlightControls as u8,
-    );
     sys.sleep_ms(keep_time);
     sys.stop();
     sys.join();

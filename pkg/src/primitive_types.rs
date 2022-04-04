@@ -1,6 +1,7 @@
 use bitfield::bitfield;
 use std::fmt;
 use crate::attacks;
+use rand::{distributions::{Distribution, Standard}, Rng};
 
 pub const WRD_EMPTY: Word = Word { 0: 0 };
 pub const ATK_DEFAULT_DELAYS: u128 = 4000;
@@ -503,6 +504,25 @@ impl From<u32> for AttackType {
     fn from(value: u32) -> Self {
         use AttackType::*;
         match value {
+            value if value == AtkCollisionAttackAgainstTheBus as u32 => AtkCollisionAttackAgainstTheBus,
+            value if value == AtkCollisionAttackAgainstAnRT as u32 => AtkCollisionAttackAgainstAnRT,
+            value if value == AtkDataThrashingAgainstRT as u32 => AtkDataThrashingAgainstRT,
+            value if value == AtkMITMAttackOnRTs as u32 => AtkMITMAttackOnRTs,
+            value if value == AtkShutdownAttackRT as u32 => AtkShutdownAttackRT,
+            value if value == AtkFakeStatusReccmd as u32 => AtkFakeStatusReccmd,
+            value if value == AtkFakeStatusTrcmd as u32 => AtkFakeStatusTrcmd,
+            value if value == AtkDesynchronizationAttackOnRT as u32 => AtkDesynchronizationAttackOnRT,
+            value if value == AtkDataCorruptionAttack as u32 => AtkDataCorruptionAttack,
+            value if value == AtkCommandInvalidationAttack as u32 => AtkCommandInvalidationAttack,
+            _ => Benign,
+        }
+    }
+}
+
+impl Distribution<AttackType> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> AttackType {
+        use AttackType::*;
+        match rng.gen_range(1..=10 as u32) {
             value if value == AtkCollisionAttackAgainstTheBus as u32 => AtkCollisionAttackAgainstTheBus,
             value if value == AtkCollisionAttackAgainstAnRT as u32 => AtkCollisionAttackAgainstAnRT,
             value if value == AtkDataThrashingAgainstRT as u32 => AtkDataThrashingAgainstRT,
