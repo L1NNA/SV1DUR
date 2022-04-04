@@ -218,9 +218,9 @@ define_sensors! {
 
     throttle_level_position1 <- "GENERAL ENG THROTTLE LEVER POSITION:1" in Percent as Float;
 
-    spoiler_handle_position <- "SPOILER HANDLE POSITION" in Position as Float;
-    spoiler_right_position <- "SPOILER RIGHT POSITION" in Percent as Float;
-    spoiler_left_position <- "SPOILER LEFT POSITION" in Percent as Float;
+    spoiler_handle_position <- "SPOILERS HANDLE POSITION" in Position as Float;
+    spoiler_right_position <- "SPOILERS RIGHT POSITION" in Percent as Float;
+    spoiler_left_position <- "SPOILERS LEFT POSITION" in Percent as Float;
 
     flaps_handle_index <- "FLAPS HANDLE INDEX" in Number as Integer;
     flaps_num_handle_positions <- "FLAPS NUM HANDLE POSITIONS" in Number as Integer;
