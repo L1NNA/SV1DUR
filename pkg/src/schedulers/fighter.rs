@@ -582,15 +582,20 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, mut run_time: u64, attac
         let rand_num = rng.gen::<f32>();
         if rand_num < 0.03 {
             let attack: AttackType = rand::random();
-            let source: Address = rand::random();
-            let destination: Address = rand::random();
+            let non_flight_controls: Address = rand::random();
+            let source = Address::FlightControls;
+            let destination = non_flight_controls;
+            if [Address::Fuel, Address::Gyro, Address::Positioning, Address::Rudder].contains(&non_flight_controls) {
+                let source = non_flight_controls;
+                let destination = Address::FlightControls;
+            }
             attack_controller.sabotage(
                 attack,
                 source as u8,
                 destination as u8,
             );
         }
-        sys.sleep_ms(50);
+        sys.sleep_ms(10);
     }
     sys.sleep_ms(attack_time);
     // we can add as many as attacks but some may not appear (due to the previous attacks).
