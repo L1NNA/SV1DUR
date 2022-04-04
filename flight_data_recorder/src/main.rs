@@ -102,12 +102,13 @@ define_units! {
     Gallons: FLOAT64 = "gallons",
 
     // Apparently there is a difference between these units
-    Position: INT64 = "position", // "Part" base scale (Not sure if FLOAT64)
+    Position: FLOAT64 = "position", // Equivalent to "Percent over 100"
     Position16k: INT64 = "position 16K", // 16 bit int
     Position32k: INT64 = "position 32K", // 32 bit int
-    Position128: INT64 = "position 128", // Value between 0 - 128
+    Position128: INT64 = "position 128", // 0 to 128 (not in prepar3d docs)
 
-    Percent: FLOAT64 = "percent",
+    Percent: FLOAT64 = "percent", // -100 to 100
+    PercentOver100: FLOAT64 = "percent over 100", // -1.0 to 1.0
 }
 
 macro_rules! define_sensors {
@@ -165,8 +166,8 @@ macro_rules! define_sensors {
 
             const SQL_CREATE_TABLE_STATEMENT: &'static str = concat! {
                 "create table sensor_data (",
-                    "elapsed_ms integer,",
-                    "delta_ms integer,",
+                    "elapsed_ms Integer, ",
+                    "delta_ms Integer, ",
                     define_sensors!(@column $( $name $type ),+),
                 ")"
             };
@@ -187,7 +188,6 @@ macro_rules! define_sensors {
             fn persist(&self, stmt: &mut sqlite::Statement, elapsed: Duration, delta: Duration)
                     -> sqlite::Result<()> {
 
-                // Elapsed time is 
                 stmt.bind_by_name(":elapsed_ms", elapsed.as_millis() as i64)?;
                 stmt.bind_by_name(":delta_ms", delta.as_millis() as i64)?;
                 $(stmt.bind_by_name(define_sensors!(@value $name), self.$name)?;)+
