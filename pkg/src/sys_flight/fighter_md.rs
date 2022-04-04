@@ -742,7 +742,7 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, run_time: u64, attack: A
         sys.run_d(d as u8, mode, emitter, d == Address::AttackController);
     }
 
-    let attack_time = 30;
+    let attack_time = run_time / 2;
     let keep_time = run_time - attack_time;
     sys.go();
     sys.sleep_ms(attack_time);

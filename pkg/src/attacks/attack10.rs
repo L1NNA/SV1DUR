@@ -48,9 +48,11 @@ impl EventHandler for CommandInvalidationAttack {
         self.default_on_cmd(d, w);
     }
     fn verify(&mut self, system: &System) -> bool {
-        let last_log = &system.logs[system.logs.len() - 1];
+        // let last_log = &system.logs[system.logs.len() - 1];
         // target is waiting for data instead.
-        return last_log.3 == self.target && last_log.4 == State::AwtData;
+        // return last_log.3 == self.target && last_log.4 == State::AwtData;
+        let bc = &system.devices[0];
+        return bc.lock().unwrap().timeout_times > 0;
     }
 }
 

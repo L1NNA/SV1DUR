@@ -14,7 +14,7 @@ fn main() {
     eval_fighter_sim(
         "sample_data.sqlite",
         0,
-        500,
+        10000,
         AttackType::AtkDataCorruptionAttack,
     )
 

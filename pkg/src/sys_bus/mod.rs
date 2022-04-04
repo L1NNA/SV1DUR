@@ -16,6 +16,8 @@ pub const CONFIG_PRINT_LOGS: bool = false;
 pub const CONFIG_SAVE_DEVICE_LOGS: bool = false;
 pub const CONFIG_SAVE_SYS_LOGS: bool = true;
 pub const BROADCAST_ADDRESS: u8 = 31;
+pub const RT_WORD_LOAD_TIME: u128 = 0;
+pub const BC_WARMUP_STEPS: u128 = 20;
 
 #[allow(unused)]
 #[derive(Clone, Debug, PartialEq)]
@@ -42,6 +44,7 @@ pub enum ErrMsg {
     MsgBMLog,
     // Flight system level log
     MsgFlight(String),
+    MsgBCTimeout(u128),
 }
 
 impl ErrMsg {
@@ -66,6 +69,7 @@ impl ErrMsg {
             // mode change
             MsgMCXClr(mem_len) => format!("MCX[{}] Clr", mem_len),
             MsgBMLog => "BM".to_owned(),
+            MsgBCTimeout(timeout) => format!("BC Timeout {}", timeout).to_string(),
             MsgFlight(msg) => msg.to_owned(),
         }
     }
@@ -258,11 +262,17 @@ pub trait EventHandler: Send {
         self.default_on_sts(d, w);
     }
     fn on_bc_ready(&mut self, _: &mut Device) {}
+    fn on_bc_timeout(&mut self, d: &mut Device) {
+        self.default_on_bc_timeout(d);
+    }
     fn on_memory_ready(&mut self, _: &mut Device) {}
     fn on_data_write(&mut self, d: &mut Device, dword_count: u8) {
         self.default_on_data_write(d, dword_count);
     }
-
+    fn default_on_bc_timeout(&mut self, d: &mut Device) {
+        let diff = d.clock.elapsed().as_nanos() - d.timeout;
+        d.log(WRD_EMPTY, ErrMsg::MsgBCTimeout(diff));
+    }
     fn default_on_data_write(&mut self, d: &mut Device, dword_count: u8) {
         for i in 0..dword_count {
             d.write(Word::new_data((i + 1) as u32));
@@ -485,6 +495,8 @@ pub struct Device {
     pub delta_t_avg: u128,
     pub delta_t_start: u128,
     pub delta_t_count: u128,
+    pub timeout: u128,
+    pub timeout_times: u128,
 }
 
 impl Device {
@@ -516,6 +528,7 @@ impl Device {
         self.dword_count = 0;
         self.dword_count_expected = 0;
         self.in_brdcst = false;
+        self.timeout = 0;
         // return the previous number of cmd
         // in case it shouldn't be reseted.
         return current_cmd;
@@ -561,6 +574,10 @@ impl Device {
         }
         self.set_state(State::AwtStsRcvB2R(dest));
         self.delta_t_start = self.clock.elapsed().as_nanos();
+        // 12_000 is the max allowed RT write delays.
+        // put 20_000 to include the queue transmission time.
+        self.timeout = self.clock.elapsed().as_nanos()
+            + (RT_WORD_LOAD_TIME + 20_000) * (data.len() as u128 + 2);
     }
     pub fn act_rt2bc(&mut self, src: u8, dword_count: u8) {
         self.set_state(State::BusyTrx);
@@ -569,6 +586,8 @@ impl Device {
         self.dword_count_expected = dword_count;
         self.set_state(State::AwtStsTrxR2B(src));
         self.delta_t_start = self.clock.elapsed().as_nanos();
+        self.timeout = self.clock.elapsed().as_nanos()
+            + (RT_WORD_LOAD_TIME + 20_000) * (dword_count as u128 + 2);
     }
     pub fn act_rt2rt(&mut self, src: u8, dst: u8, dword_count: u8) {
         self.set_state(State::BusyTrx);
@@ -577,6 +596,8 @@ impl Device {
         // expecting to recieve dword_count number of words
         self.set_state(State::AwtStsTrxR2R(src, dst));
         self.delta_t_start = self.clock.elapsed().as_nanos();
+        self.timeout = self.clock.elapsed().as_nanos()
+            + (RT_WORD_LOAD_TIME + 20_000) * (dword_count as u128 + 4);
     }
 }
 
@@ -729,6 +750,8 @@ impl System {
             delta_t_count: 0,
             delta_t_start: 0,
             write_delays: w_delay,
+            timeout: 0,
+            timeout_times: 0,
         };
         let device_name = format!("{}", device_obj);
         let go = Arc::clone(&self.go);
@@ -748,16 +771,38 @@ impl System {
                 let mut prev_word = (0, false, WRD_EMPTY);
                 // lock the device object - release only after thread shutdown:
                 let mut device = device_mtx_thread_local.lock().unwrap();
+                // warmup offset
+                let mut bc_step = 0;
 
                 loop {
                     if !go.load(Ordering::Relaxed) || device.state == State::Off {
                         spin_sleeper.sleep_ns(1000_000);
                     }
                     if device.state != State::Off {
-                        if device.mode == Mode::BC && device.state == State::Idle {
-                            device.log(WRD_EMPTY, ErrMsg::MsgBCReady);
-                            let mut local_emitter = device_handler_emitter.lock().unwrap();
-                            local_emitter.handler.on_bc_ready(&mut device);
+                        let current = device.clock.elapsed().as_nanos();
+                        if device.mode == Mode::BC {
+                            let mut timeout = device.timeout;
+                            // 10 timeout for warming up
+                            if bc_step <= BC_WARMUP_STEPS {
+                                // if it is for warming up, we add additional margin for timeout
+                                // but we can't just skip since certain operation fails forever
+                                // such as BC2RT where RT is a BM
+                                timeout *= 10;
+                            }
+                            if device.state == State::Idle {
+                                device.log(WRD_EMPTY, ErrMsg::MsgBCReady);
+                                let mut local_emitter = device_handler_emitter.lock().unwrap();
+                                device.timeout = 0;
+                                local_emitter.handler.on_bc_ready(&mut device);
+                                bc_step += 1;
+                            } else if timeout > 0 && current > timeout {
+                                device.timeout_times += 1;
+                                let mut local_emitter = device_handler_emitter.lock().unwrap();
+                                local_emitter.handler.on_bc_timeout(&mut device);
+                                device.reset_all_stateful();
+                                device.timeout = 0;
+                            }
+                        } else {
                         }
                         // if device.mode == Mode::BC{
                         //     println!("here")
@@ -765,7 +810,6 @@ impl System {
 
                         // write is `asynchrnoized`
                         let wq = device.write_queue.len();
-                        let current = device.clock.elapsed().as_nanos();
                         if wq > 0 {
                             // let mut w_logs = Vec::new();
                             for entry in device.write_queue.clone().iter() {
@@ -793,13 +837,12 @@ impl System {
                             // device.write_queue.clear();
                         }
 
-                        let word_load_time = 0; //20_000; // the number of microseconds to transmit 1 word on the bus.  This will help us find collisions
                         let res = device.read();
                         if !res.is_err() {
                             if prev_word.0 == 0 {
                                 // empty cache, do replacement
                                 prev_word = (current, true, res.unwrap());
-                            } else if current - prev_word.0 < word_load_time {
+                            } else if current - prev_word.0 < RT_WORD_LOAD_TIME {
                                 // collision
                                 let mut w = res.unwrap();
                                 if w.address() == device.address {
@@ -823,7 +866,7 @@ impl System {
                                 prev_word = (current, false, w);
                             }
                         }
-                        if prev_word.1 && current >= prev_word.0 + word_load_time {
+                        if prev_word.1 && current >= prev_word.0 + RT_WORD_LOAD_TIME {
                             // message in the cache is valid & after word_time . processe the word.
                             let mut w = prev_word.2;
                             let mut local_emitter = device_handler_emitter.lock().unwrap();
@@ -1057,5 +1100,48 @@ mod tests {
         assert!(bc.delta_t_count > 0);
         assert!(bc.delta_t_avg / bc.delta_t_count > 0);
         assert!(bc.logs.len() > 1000);
+    }
+    #[test]
+    fn test_timeout() {
+        // a system consists of only a BC and a BM.
+        // RT2BC for this BM address should be not-responsing so there will be timeouts
+        // on BC.
+        let n_devices = 2;
+        let w_delays = 0;
+        let mut sys_bus = System::new(n_devices as u32, w_delays);
+        for m in 0..n_devices {
+            // let (s1, r1) = bounded(64);
+            // s_vec.lock().unwrap().push(s1);
+            if m == 0 {
+                sys_bus.run_d(
+                    m as u8,
+                    Mode::BC,
+                    Arc::new(Mutex::new(EventHandlerEmitter {
+                        handler: Box::new(DefaultBCEventHandler {
+                            total_device: n_devices,
+                            target: 0,
+                            data: vec![1, 2, 3],
+                            proto: Proto::RT2BC,
+                            proto_rotate: false,
+                        }),
+                    })),
+                    false,
+                );
+            } else {
+                sys_bus.run_d(
+                    m as u8,
+                    Mode::BM,
+                    Arc::new(Mutex::new(EventHandlerEmitter {
+                        handler: Box::new(DefaultEventHandler {}),
+                    })),
+                    false,
+                );
+            }
+        }
+        sys_bus.go();
+        sys_bus.sleep_ms(3000);
+        sys_bus.stop();
+        sys_bus.join();
+        assert!(sys_bus.devices[0].lock().unwrap().timeout_times > 2);
     }
 }
