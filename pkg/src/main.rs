@@ -2,7 +2,7 @@
 mod attacks;
 mod risk;
 mod sys;
-mod simulation;
+// mod simulation;
 mod primitive_types;
 mod event_handlers;
 mod devices;
@@ -20,10 +20,11 @@ use sys::{System};
 use std::time::{Instant};
 mod schedulers; //::{Address, MsgPri, HercScheduler};
 #[allow(unused_imports)]
-use schedulers::{FighterScheduler, Proto, HercScheduler};
+use schedulers::{FighterBCScheduler, Proto, eval_fighter_sim};
+use event_handlers::EventHandler; // Items in traits can only be used if the trait is in scope.
 use primitive_types::{Address, AttackType, Mode, State, Word, ErrMsg, TR, BROADCAST_ADDRESS};
 use devices::{Device, format_log};
-use simulation::{fighter_simulation, extract_contents};
+// use simulation::{fighter_simulation, extract_contents};
 use sys::{eval_sys};
 use terminals::{ComponentInfo, SplitInt};
 use std::collections::LinkedList;
@@ -67,44 +68,6 @@ fn test_address_functions() {
     }
 }
 
-#[allow(unused)]
-fn test_herc_scheduler() {
-    let (_trans, recv) = bounded(512);
-    let mut bc = Device{
-        fake: false,
-        atk_type: AttackType::Benign,
-        ccmd: 0,
-        mode: Mode::BC,
-        state: State::Idle,
-        error_bit: false,
-        service_request: false,
-        memory: Vec::new(),
-        number_of_current_cmd: 0,
-        in_brdcst: false,
-        address: Address::Engine as u8,
-        id: Address::Engine as u32,
-        dword_count: 0,
-        dword_count_expected: 0,
-        clock: Instant::now(),
-        logs: Vec::new(),
-        transmitters: Vec::new(),
-        read_queue: LinkedList::new(),
-        write_queue: LinkedList::new(),
-        write_delays: 0,
-        receiver: recv,
-        delta_t_avg: 0,
-        delta_t_start: 0,
-        delta_t_count: 0,
-    };
-    let mut scheduler = HercScheduler::new();
-    let mut output: String = String::new();
-    for _ in 0..200 {
-        if let Some(new_str) = scheduler.on_bc_ready(&mut bc){
-            output = format!("{}{}", output, new_str);
-        }
-    }
-    println!("{}", output);
-}
 
 fn test_fighter_scheduler() {
     let (_trans, recv) = bounded(512);
@@ -134,7 +97,7 @@ fn test_fighter_scheduler() {
         delta_t_start: 0,
         delta_t_count: 0,
     };
-    let mut scheduler = FighterScheduler::new();
+    let mut scheduler = FighterBCScheduler::new();
     // let mut output: String = String::new();
     for _ in 0..200 {
         // if let Some(new_str) = 
@@ -213,7 +176,7 @@ fn main() {
     // let system = eval_sys(0, 4, Proto::RT2RT, true);
 
     let word_delay = 20_000; // nanoseconds to transmit a word.
-    fighter_simulation(word_delay);
+    eval_fighter_sim("sample_data.sqlite", 20_000, 500, AttackType::Benign);
 
 
 }

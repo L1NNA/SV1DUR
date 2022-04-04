@@ -1,8 +1,8 @@
 use crate::sys::{Router, System};
 use crate::schedulers::{DefaultScheduler, EmptyScheduler, Proto};
 use crate::devices::{Device, format_log};
-use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS};
-use crate::event_handlers::{EventHandler, DefaultEventHandler};
+use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS, ModeCode};
+use crate::event_handlers::{EventHandler, DefaultEventHandler, EventHandlerEmitter, DefaultBCEventHandler};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -40,6 +40,10 @@ impl MITMAttackOnRTs {
 }
 
 impl EventHandler for MITMAttackOnRTs {
+    fn get_attk_type(&self) -> AttackType {
+        AttackType::AtkMITMAttackOnRTs
+    }
+
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         if !(self.target_src_found && self.target_dst_found) && !self.done {
             if w.tr() == TR::Receive && !self.target_dst_found && w.address() != BROADCAST_ADDRESS {
@@ -120,46 +124,45 @@ pub fn test_attack4() {
             sys.run_d(
                 m as u8,
                 Mode::BC,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultBCEventHandler {
+                        total_device: n_devices - 1,
+                        target: 0,
+                        data: vec![1, 2, 3],
+                        proto: Proto::BC2RT,
+                        proto_rotate: true,
+                    })
+                })),
+                AttackType::Benign.into(),
             );
         } else {
             sys.run_d(
                 m as u8,
-                Mode::RT,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Mode::RT,Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultEventHandler {}),
+                })),
+                AttackType::Benign.into(),
             );
         }
     }
-    let attacker_router = Router {
-        // control all communications (bc only)
-        scheduler: DefaultScheduler {
-            total_device: n_devices - 1,
-            target: 0,
-            data: vec![1, 2, 3],
-            proto: Proto::BC2RT,
-            proto_rotate: true,
-        },
-        // control device-level response
-        handler: MITMAttackOnRTs {
-            attack_times: Vec::new(),
-            word_count: 0u8,
-            injected_words: 0u8,
-            success: false,
-            target_src: 0u8,
-            target_dst: 0u8,
-            target_dst_found: false, // target found in traffic
-            target_src_found: false,
-            done: false,
-        },
-    };
 
     sys.run_d(
         n_devices - 1,
         Mode::RT,
-        Arc::new(Mutex::new(attacker_router)),
-        AttackType::AtkMITMAttackOnRTs,
+        Arc::new(Mutex::new(EventHandlerEmitter {
+            handler: Box::new(MITMAttackOnRTs {
+                attack_times: Vec::new(),
+                word_count: 0u8,
+                injected_words: 0u8,
+                success: false,
+                target_src: 0u8,
+                target_dst: 0u8,
+                target_dst_found: false, // target found in traffic
+                target_src_found: false,
+                done: false,
+            }),
+        })),
+        AttackType::AtkMITMAttackOnRTs.into(),
     );
     sys.go();
     sys.sleep_ms(10);

@@ -1,7 +1,9 @@
-use crate::primitive_types::{Word, ErrMsg, State, Mode, TR, WRD_EMPTY, BROADCAST_ADDRESS, ModeCode};
+use crate::primitive_types::{Word, ErrMsg, State, Mode, TR, WRD_EMPTY, BROADCAST_ADDRESS, ModeCode, AttackType};
+use crate::schedulers::Proto;
 use crate::devices::Device;
+use crate::sys::System;
 
-pub trait EventHandler: Clone + Send {
+pub trait EventHandler: Send {
     fn on_wrd_rec(&mut self, d: &mut Device, w: &mut Word) {
         self.default_on_wrd_rec(d, w);
     }
@@ -25,6 +27,17 @@ pub trait EventHandler: Clone + Send {
     }
     fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
         self.default_on_sts(d, w)
+    }
+    fn on_bc_ready(&mut self, _: &mut Device) {}
+    fn on_memory_ready(&mut self, _: &mut Device) {}
+    fn on_data_write(&mut self, d: &mut Device, dword_count: u8) {
+        self.default_on_data_write(d, dword_count);
+    }
+
+    fn default_on_data_write(&mut self, d: &mut Device, dword_count: u8) {
+        for i in 0..dword_count {
+            d.write(Word::new_data((i + 1) as u16));
+        }
     }
 
     #[allow(unused)]
@@ -86,9 +99,7 @@ pub trait EventHandler: Clone + Send {
         if !d.fake {
             d.set_state(State::BusyTrx);
             d.write(Word::new_status(d.address, d.service_request, d.error_bit));
-            for i in 0..w.dword_count() {
-                d.write(Word::new_data((i + 1) as u16));
-            }
+            self.on_data_write(d, w.dword_count());
         }
         let current_cmds = d.reset_all_stateful();
         d.number_of_current_cmd = current_cmds;
@@ -162,6 +173,7 @@ pub trait EventHandler: Clone + Send {
                             d.write(Word::new_status(d.address, d.service_request, d.error_bit));
                         }
                     }
+                    self.on_memory_ready(d);
                     d.reset_all_stateful();
                 }
             }
@@ -171,12 +183,7 @@ pub trait EventHandler: Clone + Send {
         if d.mode == Mode::BC {
             d.log(*w, ErrMsg::MsgEntSte);
             // check delta_t
-            if d.delta_t_start != 0 {
-                let delta_t = d.clock.elapsed().as_nanos() - d.delta_t_start;
-                // delta_t has to be in between 4 and 12
-                d.delta_t_avg += delta_t;
-                d.delta_t_count += 1;
-            }
+            let mut check_delta_t = false;
             match d.state {
                 State::AwtStsTrxR2B(src) => {
                     //(transmitter confirmation)
@@ -184,6 +191,7 @@ pub trait EventHandler: Clone + Send {
                     if src == w.address() {
                         d.set_state(State::AwtData)
                     }
+                    check_delta_t = true;
                 }
                 State::AwtStsRcvB2R(dest) => {
                     // rt2rt (reciver confirmation)
@@ -199,6 +207,7 @@ pub trait EventHandler: Clone + Send {
                         d.set_state(State::AwtStsRcvR2R(src, dest));
                         d.delta_t_start = d.clock.elapsed().as_nanos();
                     }
+                    check_delta_t = true;
                 }
                 #[allow(unused)]
                 State::AwtStsRcvR2R(src, dest) => {
@@ -209,11 +218,25 @@ pub trait EventHandler: Clone + Send {
                     }
                 }
                 _ => {
-                    // dropped status word 
+                    // dropped status word
                     d.log(*w, ErrMsg::MsgEntSteDrop);
                 }
             }
+            if d.delta_t_start != 0 {
+                let delta_t = d.clock.elapsed().as_nanos() - d.delta_t_start;
+                // delta_t has to be in between 4 and 12
+                d.delta_t_avg += delta_t;
+                d.delta_t_count += 1;
+            }
         }
+    }
+
+    fn verify(&mut self, _: &System) -> bool {
+        false
+    }
+
+    fn get_attk_type(&self) -> AttackType {
+        AttackType::Benign
     }
 }
 
@@ -221,3 +244,53 @@ pub trait EventHandler: Clone + Send {
 pub struct DefaultEventHandler {}
 
 impl EventHandler for DefaultEventHandler {}
+
+
+#[derive(Clone, Debug)]
+pub struct DefaultBCEventHandler {
+    // val: u8,
+    // path: String,
+    // data: Vec<u32>
+    pub total_device: u8,
+    pub target: u8,
+    pub data: Vec<u16>,
+    pub proto: Proto,
+    pub proto_rotate: bool,
+}
+
+impl EventHandler for DefaultBCEventHandler {
+    fn on_bc_ready(&mut self, d: &mut Device) {
+        self.target = self.target % (self.total_device - 1) + 1;
+        let another_target = self.target % (self.total_device - 1) + 1;
+        //
+        // d.act_rt2bc(self.target, self.data.len() as u8);
+        // a simple rotating scheduler
+        // println!("{:?}", self.proto);
+        match self.proto {
+            Proto::RT2RT => {
+                d.act_rt2rt(self.target, another_target, self.data.len() as u8);
+                if self.proto_rotate {
+                    self.proto = Proto::BC2RT;
+                }
+            }
+            Proto::BC2RT => {
+                d.act_bc2rt(self.target, &self.data);
+                if self.proto_rotate {
+                    self.proto = Proto::RT2BC;
+                }
+            }
+            Proto::RT2BC => {
+                d.act_rt2bc(self.target, self.data.len() as u8);
+                if self.proto_rotate {
+                    self.proto = Proto::RT2RT;
+                }
+            }
+        }
+    }
+}
+
+pub struct EventHandlerEmitter {
+    pub handler : Box<dyn EventHandler>
+}
+
+impl EventHandlerEmitter {}

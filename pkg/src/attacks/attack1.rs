@@ -1,8 +1,8 @@
 use crate::sys::{Router, System};
 use crate::schedulers::{DefaultScheduler, EmptyScheduler, Proto};
 use crate::devices::{Device, format_log};
-use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS};
-use crate::event_handlers::{EventHandler, DefaultEventHandler};
+use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS, ModeCode};
+use crate::event_handlers::{EventHandler, DefaultEventHandler, EventHandlerEmitter, DefaultBCEventHandler};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -30,6 +30,10 @@ impl CollisionAttackAgainstTheBus {
 }
 
 impl EventHandler for CollisionAttackAgainstTheBus {
+    fn get_attk_type(&self) -> AttackType {
+        AttackType::AtkCollisionAttackAgainstTheBus
+    }
+
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         d.log(
             *w,
@@ -83,15 +87,25 @@ pub fn test_attack1() {
             sys.run_d(
                 m as u8,
                 Mode::BC,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultBCEventHandler {
+                        total_device: n_devices - 1,
+                        target: 0,
+                        data: vec![1, 2, 3],
+                        proto: Proto::BC2RT,
+                        proto_rotate: true,
+                    })
+                })),
+                AttackType::Benign.into(),
             );
         } else {
             sys.run_d(
                 m as u8,
                 Mode::RT,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultEventHandler {}),
+                })),
+                AttackType::Benign.into(),
             );
         }
     }
@@ -115,8 +129,14 @@ pub fn test_attack1() {
     sys.run_d(
         n_devices - 1,
         Mode::RT,
-        Arc::new(Mutex::new(attacker_router)),
-        AttackType::AtkCollisionAttackAgainstTheBus,
+        Arc::new(Mutex::new(EventHandlerEmitter {
+            handler: Box::new(CollisionAttackAgainstTheBus {
+                nwords_inj: 5,
+                started: 0,
+                success: false,
+            })
+        })),
+        AttackType::AtkCollisionAttackAgainstTheBus.into(),
     );
     sys.go();
     sys.sleep_ms(10);

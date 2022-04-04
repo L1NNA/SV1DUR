@@ -1,8 +1,8 @@
 use crate::primitive_types::{ErrMsg, Word, Mode, State, AttackType, WRD_EMPTY,
 CONFIG_SAVE_DEVICE_LOGS, CONFIG_SAVE_SYS_LOGS, ATK_DEFAULT_DELAYS,
 WORD_LOAD_TIME, COLLISION_TIME};
-use crate::event_handlers::{EventHandler, DefaultEventHandler};
-use crate::devices::{Device, format_log};
+use crate::event_handlers::{EventHandler, DefaultEventHandler, EventHandlerEmitter, DefaultBCEventHandler};
+use crate::devices::{Device, format_log, format_log_bm};
 use crate::schedulers::{DefaultScheduler, Scheduler, Proto};
 use chrono::Utc;
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, select, Select, TryRecvError::Empty};
@@ -96,7 +96,7 @@ impl System {
         for device_mx in &self.devices {
             let device = device_mx.lock();
             match device {
-                Ok(device) => device.log_merge(&mut self.logs),
+                Ok(device) => if device.mode != Mode::BC {device.log_merge(&mut self.logs)},
                 Err(_) => println!("Error flushing log on device"),
             }
         }
@@ -113,32 +113,43 @@ impl System {
             for l in &self.logs {
                 let _ = writeln!(file, "{}", format_log(&l));
             }
+            let log_file = PathBuf::from(self.home_dir.clone()).join("sys.flight.log");
+            let mut file = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .create(true)
+                .open(log_file)
+                .unwrap();
+            for l in &self.logs {
+                match &l.6 {
+                    ErrMsg::MsgFlight(msg) => {
+                        let _ = writeln!(file, "{} {}", l.0, msg);
+                    }
+                    _ => {}
+                }
+            }
         }
     }
     pub fn sleep_ms(&mut self, ms: u64) {
         thread::sleep(Duration::from_millis(ms));
     }
 
-    pub fn run_d<K: Scheduler + 'static, V: EventHandler + 'static>(
+    pub fn run_d(
         &mut self,
         addr: u8,
         mode: Mode,
-        router: Arc<Mutex<Router<K, V>>>,
-        atk_type: AttackType,
+        handler_emitter: Arc<Mutex<EventHandlerEmitter>>,
+        fake: bool,
     ) {
         let transmitters = self.transmitters.clone();
         let receiver = self.receivers[self.n_devices as usize].clone();
         let mut w_delay = self.write_delays;
-        let mut fake = false;
-        if atk_type != AttackType::Benign {
-            fake = true;
-        }
         if fake {
             w_delay = ATK_DEFAULT_DELAYS;
         }
         let device_obj = Device {
             fake: fake,
-            atk_type: atk_type,
+            atk_type: AttackType::Benign,
             ccmd: 0,
             state: State::Idle,
             error_bit: false,
@@ -166,10 +177,11 @@ impl System {
         let go = Arc::clone(&self.go);
         let exit = Arc::clone(&self.exit);
         let log_file = PathBuf::from(self.home_dir.clone()).join(format!("{}.log", device_obj));
+        let log_file_bm = PathBuf::from(self.home_dir.clone()).join(format!("{}.dat", device_obj));
         self.n_devices += 1;
         let device_mtx = Arc::new(Mutex::new(device_obj));
         let device_mtx_thread_local = device_mtx.clone();
-        let device_router = Arc::clone(&router);
+        let device_handler_emitter = Arc::clone(&handler_emitter);
         self.devices.push(device_mtx.clone());
         let temp_mtx = device_mtx.clone();
         let mut temp_dev = temp_mtx.lock().unwrap();
@@ -178,7 +190,7 @@ impl System {
             .name(format!("{}", device_name).to_string())
             .spawn(move || {
                 let spin_sleeper = spin_sleep::SpinSleeper::new(1_000);
-                let mut local_router = device_router.lock().unwrap();
+                // let mut local_router = device_router.lock().unwrap();
                 // read_time, valid message flag, word
                 let mut prev_word = (0, false, WRD_EMPTY);
                 // lock the device object - release only after thread shutdown:
@@ -193,11 +205,14 @@ impl System {
                         if device.mode == Mode::BC {
                             if device.state == State::Idle {
                                 device.log(WRD_EMPTY, ErrMsg::MsgBCReady);
-                                local_router.scheduler.on_bc_ready(&mut device);
-                            } else if local_router.scheduler.bus_available() < device.clock.elapsed().as_nanos() {
-                                device.log(WRD_EMPTY, ErrMsg::MsgAttk("timeout reached".to_string()));
-                                device.set_state(State::Idle);
-                            }
+                                let mut local_emitter = device_handler_emitter.lock().unwrap();
+                                local_emitter.handler.on_bc_ready(&mut device);
+                            } 
+                            // TODO: I need to find a new way to do timeouts.
+                            // else if local_router.scheduler.bus_available() < device.clock.elapsed().as_nanos() {
+                            //     device.log(WRD_EMPTY, ErrMsg::MsgAttk("timeout reached".to_string()));
+                            //     device.set_state(State::Idle);
+                            // }
                         }
 
                         // write is `asynchrnoized`
@@ -256,25 +271,31 @@ impl System {
                         }
                         while !device.read_queue.is_empty() && device.read_queue.front().unwrap().0 <= current - WORD_LOAD_TIME {
                             let (time, mut word, valid) = device.read_queue.pop_front().unwrap();
+                            let mut local_emitter = device_handler_emitter.lock().unwrap();
                             if !valid {
-                                local_router.handler.on_err_parity(&mut device, &mut word);
+                                let new_atk_type = local_emitter.handler.get_attk_type();
+                                if new_atk_type != device.atk_type {
+                                    device.reset_all_stateful();
+                                    device.atk_type = new_atk_type;
+                                }
+                                local_emitter.handler.on_err_parity(&mut device, &mut word);
                             } else if word.sync() == 1 {
                                 // device.ensure_idle();
                                 if word.instrumentation_bit() == 1 {
-                                    local_router.handler.on_cmd(&mut device, &mut word)
+                                    local_emitter.handler.on_cmd(&mut device, &mut word)
                                 } else {
                                     // status word
-                                    local_router.handler.on_sts(&mut device, &mut word);
+                                    local_emitter.handler.on_sts(&mut device, &mut word);
                                     if word.service_request_bit() != 0 {
-                                        local_router.scheduler.request_sr(word.address());
+                                        // local_emitter.scheduler.request_sr(word.address());
                                     }
                                     if word.message_errorbit() != 0{
-                                        local_router.scheduler.error_bit();
+                                        // local_emitter.scheduler.error_bit();
                                     }
                                 }
                             } else {
                                 // data word
-                                local_router.handler.on_dat(&mut device, &mut word);
+                                local_emitter.handler.on_dat(&mut device, &mut word);
                             }
                         }
                     }
@@ -296,6 +317,26 @@ impl System {
                             let device_des = device.to_string();
                             for l in &device.logs {
                                 writeln!(file, "{}", format_log(&l)).unwrap();
+                            }
+                            println!("{} Done flushing logs", device_des);
+                        }
+                        // for bus monitor
+                        if CONFIG_SAVE_SYS_LOGS && device.mode == Mode::BM {
+                            println!(
+                                "{} writing {} logs to {} ",
+                                device,
+                                device.logs.len(),
+                                log_file_bm.to_str().unwrap()
+                            );
+                            let mut file = OpenOptions::new()
+                                .write(true)
+                                .append(true)
+                                .create(true)
+                                .open(log_file_bm)
+                                .unwrap();
+                            let device_des = device.to_string();
+                            for l in &device.logs {
+                                writeln!(file, "{}", format_log_bm(&l)).unwrap();
                             }
                             println!("{} Done flushing logs", device_des);
                         }
@@ -337,15 +378,25 @@ pub fn eval_sys(w_delays: u128, n_devices: u8, proto: Proto, proto_rotate: bool)
             sys.run_d(
                 m as u8,
                 Mode::BC,
-                Arc::new(Mutex::new(router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultBCEventHandler {
+                        total_device: n_devices,
+                        target: 0,
+                        data: vec![1, 2, 3],
+                        proto: proto,
+                        proto_rotate: proto_rotate,
+                    })
+                })),
+                AttackType::Benign.into(),
             );
         } else {
             sys.run_d(
                 m as u8,
                 Mode::RT,
-                Arc::new(Mutex::new(router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultEventHandler {})
+                })),
+                AttackType::Benign.into(),
             );
         }
     }

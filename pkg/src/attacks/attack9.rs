@@ -1,8 +1,8 @@
 use crate::sys::{Router, System};
 use crate::schedulers::{DefaultScheduler, EmptyScheduler, Proto};
-use crate::devices::Device;
-use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS};
-use crate::event_handlers::{EventHandler, DefaultEventHandler};
+use crate::devices::{Device, format_log};
+use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS, ModeCode};
+use crate::event_handlers::{EventHandler, DefaultEventHandler, EventHandlerEmitter, DefaultBCEventHandler};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -40,8 +40,33 @@ impl DataCorruptionAttack {
             ),
         );
     }
+}
 
-    pub fn verify(&self, system: &System) -> bool {
+impl EventHandler for DataCorruptionAttack {
+    fn get_attk_type(&self) -> AttackType {
+        AttackType::AtkDataCorruptionAttack
+    }
+
+    fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
+        // This function replaces "find_RT_tcmd" from Michael's code
+        // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
+        let destination = w.address();
+        if destination == self.target && self.target_found == false && w.tr() == TR::Transmit {
+            self.word_count = w.dword_count();
+            // do we need the sub address?
+            d.log(
+                *w,
+                ErrMsg::MsgAttk(
+                    format!("Attacker>> Target detected(RT{})", self.target).to_string(),
+                ),
+            );
+            self.target_found = true;
+            self.inject(d);
+        }
+        self.default_on_cmd(d, w);
+    }
+
+    fn verify(&mut self, system: &System) -> bool {
         let mut recieved_faked = 0;
         for l in &system.logs {
             if l.6 == ErrMsg::MsgBCReady {
@@ -61,27 +86,6 @@ impl DataCorruptionAttack {
             }
         }
         return false;
-    }
-}
-
-impl EventHandler for DataCorruptionAttack {
-    fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        // This function replaces "find_RT_tcmd" from Michael's code
-        // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
-        let destination = w.address();
-        if destination == self.target && self.target_found == false && w.tr() == TR::Transmit {
-            self.word_count = w.dword_count();
-            // do we need the sub address?
-            d.log(
-                *w,
-                ErrMsg::MsgAttk(
-                    format!("Attacker>> Target detected(RT{})", self.target).to_string(),
-                ),
-            );
-            self.target_found = true;
-            self.inject(d);
-        }
-        self.default_on_cmd(d, w);
     }
 }
 
@@ -111,15 +115,24 @@ pub fn eval_attack9(w_delays: u128, proto: Proto) -> bool {
             sys.run_d(
                 m as u8,
                 Mode::BC,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultBCEventHandler {
+                        total_device: n_devices - 1,
+                        target: 0,
+                        data: vec![1, 2, 3],
+                        proto: Proto::BC2RT,
+                        proto_rotate: true,
+                    })
+                })),
+                AttackType::Benign.into(),
             );
         } else {
             sys.run_d(
                 m as u8,
-                Mode::RT,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Mode::RT,Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultEventHandler {}),
+                })),
+                AttackType::Benign.into(),
             );
         }
     }
@@ -130,18 +143,15 @@ pub fn eval_attack9(w_delays: u128, proto: Proto) -> bool {
         target: 2, // attacking RT address @4
         target_found: false,
     };
-    let attacker_router = Arc::new(Mutex::new(Router {
-        // control all communications (bc only)
-        scheduler: EmptyScheduler {},
-        // control device-level response
-        handler: attk,
+    let attacker_router = Arc::new(Mutex::new(EventHandlerEmitter {
+        handler: Box::new(attk),
     }));
 
     sys.run_d(
         n_devices - 1,
         Mode::RT,
         Arc::clone(&attacker_router),
-        AttackType::AtkDataCorruptionAttack,
+        AttackType::AtkDataCorruptionAttack.into(),
     );
     sys.go();
     sys.sleep_ms(400);

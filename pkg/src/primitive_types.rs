@@ -1,5 +1,6 @@
 use bitfield::bitfield;
 use std::fmt;
+use crate::attacks;
 
 pub const WRD_EMPTY: Word = Word { 0: 0 };
 pub const ATK_DEFAULT_DELAYS: u128 = 4000;
@@ -9,6 +10,14 @@ pub const CONFIG_SAVE_SYS_LOGS: bool = true;
 pub const BROADCAST_ADDRESS: u8 = 31;
 pub const WORD_LOAD_TIME: u128 = 20_000;
 pub const COLLISION_TIME: u128 = WORD_LOAD_TIME;
+
+
+#[derive(Clone)]
+pub enum SystemState {
+    Inactive,
+    Active
+}
+
 
 #[repr(u8)]
 pub enum ModeCode {
@@ -76,7 +85,7 @@ bitfield! {
 
 impl fmt::Display for Word {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "w:{:#027b}[{:02}]", self.all(), self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
+        write!(f, "w:{:#022b}[{:02}]", self.all(), self.attk()) // We need an extra 2 bits for '0b' on top of the number of bits we're printing
         // We need to print all 27 bits.  Binary printing only supports padding, not "width", so we can't hide the 1s, only the 0s.
     }
 }
@@ -158,6 +167,9 @@ pub enum ErrMsg {
     MsgEntSteDrop,
     MsgAttk(String),
     MsgMCXClr(usize),
+    // MB log
+    MsgBMLog,
+    MsgFlight(String),
 }
 
 impl ErrMsg {
@@ -181,6 +193,8 @@ impl ErrMsg {
             MsgAttk(msg) => msg.to_owned(),
             // mode change
             MsgMCXClr(mem_len) => format!("MCX[{}] Clr", mem_len),
+            MsgBMLog => "BM".to_owned(),
+            MsgFlight(msg) => msg.to_owned(),
         }
     }
 }
@@ -271,6 +285,8 @@ pub enum Address {
     Tailhook,
     Gyro,
     Climate,
+    BusMonitor,
+    AttackController,
     Broadcast = 31,
 }
 
@@ -483,3 +499,31 @@ pub enum AttackType {
     AtkCommandInvalidationAttack = 10,
 }
 
+impl From<u32> for AttackType {
+    fn from(value: u32) -> Self {
+        use AttackType::*;
+        match value {
+            value if value == AtkCollisionAttackAgainstTheBus as u32 => AtkCollisionAttackAgainstTheBus,
+            value if value == AtkCollisionAttackAgainstAnRT as u32 => AtkCollisionAttackAgainstAnRT,
+            value if value == AtkDataThrashingAgainstRT as u32 => AtkDataThrashingAgainstRT,
+            value if value == AtkMITMAttackOnRTs as u32 => AtkMITMAttackOnRTs,
+            value if value == AtkShutdownAttackRT as u32 => AtkShutdownAttackRT,
+            value if value == AtkFakeStatusReccmd as u32 => AtkFakeStatusReccmd,
+            value if value == AtkFakeStatusTrcmd as u32 => AtkFakeStatusTrcmd,
+            value if value == AtkDesynchronizationAttackOnRT as u32 => AtkDesynchronizationAttackOnRT,
+            value if value == AtkDataCorruptionAttack as u32 => AtkDataCorruptionAttack,
+            value if value == AtkCommandInvalidationAttack as u32 => AtkCommandInvalidationAttack,
+            _ => Benign,
+        }
+    }
+}
+
+impl Into<bool> for AttackType {
+    fn into(mut self) -> bool {
+        use AttackType::*;
+        match self {
+            Benign => false,
+            _ => true,
+        }
+    }
+}

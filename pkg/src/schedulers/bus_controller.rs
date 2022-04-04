@@ -1,10 +1,8 @@
-#[allow(unused_imports)]
 use crate::sys::{Router, System};
 use crate::schedulers::{DefaultScheduler, Scheduler};
 use crate::devices::Device;
 use crate::event_handlers::{DefaultEventHandler, EventHandler};
 use crate::primitive_types::{ErrMsg, Mode, Word};
-#[allow(unused_imports)]
 use std::time::{Instant, Duration};
 use priority_queue::DoublePriorityQueue;
 use crate::primitive_types::{Address, MsgPri};

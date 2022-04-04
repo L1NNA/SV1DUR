@@ -1,8 +1,8 @@
 use crate::sys::{Router, System};
 use crate::schedulers::{DefaultScheduler, EmptyScheduler, Proto};
-use crate::devices::Device;
+use crate::devices::{Device, format_log};
 use crate::primitive_types::{AttackType, ErrMsg, Mode, State, Word, TR, WRD_EMPTY, BROADCAST_ADDRESS, ModeCode};
-use crate::event_handlers::{EventHandler, DefaultEventHandler};
+use crate::event_handlers::{EventHandler, DefaultEventHandler, EventHandlerEmitter, DefaultBCEventHandler};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug)]
@@ -29,19 +29,13 @@ impl ShutdownAttackRT {
         self.success = true;
         // d.set_state(State::Off); // Not sure what's going on here yet.  TODO come back to this.
     }
-    pub fn verify(&self, system: &System) -> bool {
-        for d in &system.devices {
-            let device = d.lock().unwrap();
-            println!("{}", device);
-            if device.state == State::Off {
-                return true;
-            }
-        }
-        return false;
-    }
 }
 
 impl EventHandler for ShutdownAttackRT {
+    fn get_attk_type(&self) -> AttackType {
+        AttackType::AtkShutdownAttackRT
+    }
+
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         if w.address() == self.target && self.target_found == false {
             d.log(
@@ -64,6 +58,17 @@ impl EventHandler for ShutdownAttackRT {
             self.kill_rt(d);
         }
         self.default_on_sts(d, w);
+    }
+
+    fn verify(&mut self, system: &System) -> bool {
+        for d in &system.devices {
+            let device = d.lock().unwrap();
+            println!("{}", device);
+            if device.state == State::Off {
+                return true;
+            }
+        }
+        return false;
     }
 }
 
@@ -93,15 +98,24 @@ pub fn eval_attack5(w_delays: u128, proto: Proto) -> bool {
             sys.run_d(
                 m as u8,
                 Mode::BC,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultBCEventHandler {
+                        total_device: n_devices - 1,
+                        target: 0,
+                        data: vec![1, 2, 3],
+                        proto: Proto::BC2RT,
+                        proto_rotate: true,
+                    })
+                })),
+                AttackType::Benign.into(),
             );
         } else {
             sys.run_d(
                 m as u8,
-                Mode::RT,
-                Arc::new(Mutex::new(default_router)),
-                AttackType::Benign,
+                Mode::RT,Arc::new(Mutex::new(EventHandlerEmitter {
+                    handler: Box::new(DefaultEventHandler {}),
+                })),
+                AttackType::Benign.into(),
             );
         }
     }
@@ -112,18 +126,15 @@ pub fn eval_attack5(w_delays: u128, proto: Proto) -> bool {
         target: 2, // attacking RT address @4
         target_found: false,
     };
-    let attacker_router = Arc::new(Mutex::new(Router {
-        // control all communications (bc only)
-        scheduler: EmptyScheduler {},
-        // control device-level response
-        handler: attk,
+    let attacker_router = Arc::new(Mutex::new(EventHandlerEmitter {
+        handler: Box::new(attk),
     }));
 
     sys.run_d(
         n_devices - 1,
         Mode::RT,
         Arc::clone(&attacker_router),
-        AttackType::AtkShutdownAttackRT,
+        AttackType::AtkShutdownAttackRT.into(),
     );
     sys.go();
     sys.sleep_ms(100);

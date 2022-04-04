@@ -1,5 +1,7 @@
-pub mod bus_controller;
-// use bus_controller::{Address, HercScheduler, FighterScheduler};
-pub mod generic;
+mod bus_controller;
+mod generic;
+mod fighter;
+
+
 pub use generic::{Proto, Scheduler, DefaultScheduler, EmptyScheduler};
-pub use bus_controller::{FighterScheduler, HercScheduler};
+pub use fighter::{FighterBCScheduler, eval_fighter_sim};

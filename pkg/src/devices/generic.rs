@@ -20,6 +20,11 @@ pub fn format_log(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> Strin
     );
 }
 
+
+pub fn format_log_bm(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> String {
+    return format!("{} {:?}", l.0, l.5);
+}
+
 #[derive(Clone, Debug)]
 pub struct Device {
     pub fake: bool,

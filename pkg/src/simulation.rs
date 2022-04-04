@@ -2,7 +2,7 @@ use rusqlite::{Connection, Result};
 use crate::sys::{System, Router};
 use crate::primitive_types::{Mode, AttackType, Address, Word};
 use crate::event_handlers::{EventHandler, DefaultEventHandler, OfflineHandler, OfflineFlightControlsHandler};
-use crate::schedulers::{FighterScheduler, Proto, Scheduler};
+use crate::schedulers::{FighterBCScheduler, Proto, Scheduler};
 use crate::devices::Device;
 use crate::terminals::SplitInt;
 use std::sync::{Arc, Mutex};
@@ -90,14 +90,14 @@ pub fn fighter_simulation(w_delays: u128) -> Result<()> {
                     m as u8,
                     Mode::BC,
                     Arc::new(Mutex::new(router)),
-                    AttackType::Benign,
+                    AttackType::Benign.into(),
                 );
             } else {
                 sys.run_d(
                     m as u8,
                     Mode::RT,
                     Arc::new(Mutex::new(router)),
-                    AttackType::Benign,
+                    AttackType::Benign.into(),
                 );
             }
         } else {  // m == Address::FlightControls
@@ -111,7 +111,7 @@ pub fn fighter_simulation(w_delays: u128) -> Result<()> {
                 m as u8,
                 Mode::RT,
                 Arc::new(Mutex::new(router)),
-                AttackType::Benign,
+                AttackType::Benign.into(),
             );
         }
     }
