@@ -213,7 +213,18 @@ define_sensors! {
     yoke_x_indicator <- "YOKE X INDICATOR" in Position as Float;
     yoke_y_indicator <- "YOKE Y INDICATOR" in Position as Float;
 
+    aileron_trim <- "AILERON TRIM" in Radians as Float;
+    aileron_trim_pct <- "AILERON TRIM PCT" in PercentOver100 as Float;
+    aileron_position <- "AILERON POSITION" in Position as Float;
+
+    elevator_trim_position <- "ELEVATOR TRIM POSITION" in Radians as Float;
+    elevator_trim_neutral <- "ELEVATOR TRIM NEUTRAL" in Radians as Float;
+    elevator_position <- "ELEVATOR POSITION" in Position as Float;
+
+    rudder_trim <- "RUDDER TRIM" in Radians as Float;
+    rudder_trim_pct <- "RUDDER TRIM PCT" in PercentOver100 as Float;
     rudder_position <- "RUDDER POSITION" in Position as Float;
+
     rudder_pedal_position <- "RUDDER PEDAL POSITION" in Position as Float;
     rudder_pedal_indicator <- "RUDDER PEDAL INDICATOR" in Position as Float;
 
