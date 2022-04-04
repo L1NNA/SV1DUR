@@ -9,7 +9,7 @@ pub mod attack7;
 pub mod attack8;
 pub mod attack9;
 
-use crate::sys::{
+use crate::sys_bus::{
     format_log, AttackType, DefaultBCEventHandler, DefaultEventHandler, Device, ErrMsg,
     EventHandler, EventHandlerEmitter, Mode, Proto, State, System, Word, TR, WRD_EMPTY,
 };
@@ -125,12 +125,12 @@ pub fn eval_attack_controller(
 ) -> HashMap<u32, i32> {
     // let n_devices = 3;
     // let w_delays = w_delays;
-    let mut sys = System::new(n_devices as u32, w_delays);
+    let mut sys_bus = System::new(n_devices as u32, w_delays);
     for m in 0..(n_devices - 2) {
         // let (s1, r1) = bounded(64);
         // s_vec.lock().unwrap().push(s1);
         if m == 0 {
-            sys.run_d(
+            sys_bus.run_d(
                 m as u8,
                 Mode::BC,
                 Arc::new(Mutex::new(EventHandlerEmitter {
@@ -145,7 +145,7 @@ pub fn eval_attack_controller(
                 false,
             );
         } else {
-            sys.run_d(
+            sys_bus.run_d(
                 m as u8,
                 Mode::RT,
                 Arc::new(Mutex::new(EventHandlerEmitter {
@@ -156,7 +156,7 @@ pub fn eval_attack_controller(
         }
     }
 
-    sys.run_d(
+    sys_bus.run_d(
         n_devices - 2,
         Mode::BM,
         Arc::new(Mutex::new(EventHandlerEmitter {
@@ -172,38 +172,38 @@ pub fn eval_attack_controller(
         })),
     };
 
-    sys.run_d(
+    sys_bus.run_d(
         n_devices - 1,
         Mode::RT,
         Arc::clone(&attack_controller.emitter),
         true,
     );
 
-    sys.go();
-    sys.sleep_ms(1);
+    sys_bus.go();
+    sys_bus.sleep_ms(1);
 
     // attack_controller.sabotage(1.into(), 1, 2);
-    // sys.sleep_ms(50);
+    // sys_bus.sleep_ms(50);
 
     // attack_controller.sabotage(2.into(), 1, 2);
-    // sys.sleep_ms(1000);
+    // sys_bus.sleep_ms(1000);
     attack_controller.sabotage(attack.into(), 1, 2);
-    sys.sleep_ms(50);
+    sys_bus.sleep_ms(50);
     // attack_controller.sabotage(1.into(), 1, 2);
-    // sys.sleep_ms(50);
+    // sys_bus.sleep_ms(50);
     // attack_controller.sabotage(2.into(), 1, 2);
-    // sys.sleep_ms(50);
+    // sys_bus.sleep_ms(50);
     // for attack_index in 1..11 {
     //     let attack_type: AttackType = (11 - attack_index).into();
     //     println!("Running {:?}...", attack_type);
     //     attack_controller.sabotage(attack_type, 1, 2);
-    //     sys.sleep_ms(100);
+    //     sys_bus.sleep_ms(100);
     // }
     println!("Done...");
-    sys.stop();
-    sys.join();
+    sys_bus.stop();
+    sys_bus.join();
     let mut result = HashMap::new();
-    for l in &sys.logs {
+    for l in &sys_bus.logs {
         if l.5.attk() != 0 {
             // println!("{} {}/{}", format_log(&l), recieved_faked, self.word_count);
             *result.entry(l.5.attk()).or_insert(0) += 1;

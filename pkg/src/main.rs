@@ -1,12 +1,12 @@
 mod attacks;
 mod risk;
-mod sim;
-mod sys;
+mod sys_bus;
+mod sys_flight;
 #[allow(unused_imports)]
 use attacks::eval_attack_controller;
 use risk::eval_all;
-use sim::eval_fighter_sim;
-use sys::{eval_sys, AttackType, Proto};
+use sys_bus::{eval_sys, AttackType, Proto};
+use sys_flight::fighter_md::eval_fighter_sim;
 
 fn main() {
     // eval_all();

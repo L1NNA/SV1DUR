@@ -610,7 +610,7 @@ impl System {
             let _ = create_dir(PathBuf::from(&home_dir));
         }
 
-        let mut sys = System {
+        let mut sys_bus = System {
             n_devices: 0,
             max_devices: max_devices,
             transmitters: Vec::new(),
@@ -624,13 +624,13 @@ impl System {
             devices: Vec::new(),
             logs: Vec::new(),
         };
-        for _ in 0..sys.max_devices {
+        for _ in 0..sys_bus.max_devices {
             let (s1, r1) = bounded(512);
             // let (s1, r1) = unbounded();
-            sys.transmitters.push(s1);
-            sys.receivers.push(r1);
+            sys_bus.transmitters.push(s1);
+            sys_bus.receivers.push(r1);
         }
-        return sys;
+        return sys_bus;
     }
 
     pub fn go(&mut self) {
@@ -663,7 +663,7 @@ impl System {
 
         self.logs.sort_by_key(|k| k.0);
         if CONFIG_SAVE_SYS_LOGS {
-            let log_file = PathBuf::from(self.home_dir.clone()).join("sys.log");
+            let log_file = PathBuf::from(self.home_dir.clone()).join("sys_bus.log");
             let mut file = OpenOptions::new()
                 .write(true)
                 .append(true)
@@ -673,7 +673,7 @@ impl System {
             for l in &self.logs {
                 let _ = writeln!(file, "{}", format_log(&l));
             }
-            let log_file = PathBuf::from(self.home_dir.clone()).join("sys.flight.log");
+            let log_file = PathBuf::from(self.home_dir.clone()).join("sys_bus.flight.log");
             let mut file = OpenOptions::new()
                 .write(true)
                 .append(true)
@@ -1005,12 +1005,12 @@ impl From<i32> for AttackType {
 pub fn eval_sys(w_delays: u128, n_devices: u8, proto: Proto, proto_rotate: bool) -> System {
     // let n_devices = 3;
     // let w_delays = w_delays;
-    let mut sys = System::new(n_devices as u32, w_delays);
+    let mut sys_bus = System::new(n_devices as u32, w_delays);
     for m in 0..n_devices {
         // let (s1, r1) = bounded(64);
         // s_vec.lock().unwrap().push(s1);
         if m == 0 {
-            sys.run_d(
+            sys_bus.run_d(
                 m as u8,
                 Mode::BC,
                 Arc::new(Mutex::new(EventHandlerEmitter {
@@ -1025,7 +1025,7 @@ pub fn eval_sys(w_delays: u128, n_devices: u8, proto: Proto, proto_rotate: bool)
                 false,
             );
         } else {
-            sys.run_d(
+            sys_bus.run_d(
                 m as u8,
                 Mode::RT,
                 Arc::new(Mutex::new(EventHandlerEmitter {
@@ -1035,11 +1035,11 @@ pub fn eval_sys(w_delays: u128, n_devices: u8, proto: Proto, proto_rotate: bool)
             );
         }
     }
-    sys.go();
-    sys.sleep_ms(100);
-    sys.stop();
-    sys.join();
-    return sys;
+    sys_bus.go();
+    sys_bus.sleep_ms(100);
+    sys_bus.stop();
+    sys_bus.join();
+    return sys_bus;
 }
 
 #[cfg(test)]
@@ -1056,6 +1056,6 @@ mod tests {
         println!("{}", bc.delta_t_avg / bc.delta_t_count);
         assert!(bc.delta_t_count > 0);
         assert!(bc.delta_t_avg / bc.delta_t_count > 0);
-        assert!(bc.logs.len() > 0);
+        assert!(bc.logs.len() > 1000);
     }
 }

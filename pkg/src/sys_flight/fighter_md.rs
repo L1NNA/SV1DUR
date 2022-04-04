@@ -1,5 +1,5 @@
 use crate::attacks::AttackController;
-use crate::sys::{
+use crate::sys_bus::{
     AttackType, DefaultEventHandler, Device, ErrMsg, EventHandler, EventHandlerEmitter, Mode,
     System, Word, TR, WRD_EMPTY,
 };
@@ -478,16 +478,10 @@ impl EventHandler for FighterBCScheduler {
                     repeating: false,
                     word_count: wc,
                 });
-                time = if time > self.timeout {
-                    time
-                } else {
-                    self.timeout
-                };
                 let mut current = d.clock.elapsed().as_nanos();
                 if time >= current {
                     let wait = time - current;
-                    // spin_sleeper.sleep_ns(wait.try_into().unwrap());
-                    current = d.clock.elapsed().as_nanos();
+                    spin_sleeper.sleep_ns(wait.try_into().unwrap());
                 }
                 match (src, dst) {
                     (source, _) if source as u8 == d.address => {
@@ -503,11 +497,8 @@ impl EventHandler for FighterBCScheduler {
                                 },
                                 time,
                             );
+                            // not used
                         }
-                        // d.act_bc2rt(dst as u8, wc); // Can't be wordcount, must be data.  We don't know what data we want to send, that's the Device itself.
-                        let bus_available = current + (2 + wc as u128) * 400_000;
-                        self.timeout = bus_available;
-                        //Some(format!("[{:0>6?}] from {src:?} to {dst:?} with {src:?} as BC\n[{:0>6?}] - message finished\n", current/1000, bus_available/1000))
                     }
                     (_, destination) if destination as u8 == d.address => {
                         // RT to BC
@@ -523,10 +514,9 @@ impl EventHandler for FighterBCScheduler {
                                 time,
                             );
                         }
+                        // synchronized event call (bus will wait until all involved device finished).
+                        // todo: add timeout event (should be added to the bus level rather than flight level)
                         d.act_rt2bc(src as u8, wc);
-                        let bus_available = current + (2 + wc as u128) * 400_000;
-                        self.timeout = bus_available;
-                        //Some(format!("[{:0>6?}] from {src:?} to {dst:?} with {dst:?} as BC\n[{:0>6?}] - message finished\n", current/1000, bus_available/1000))
                     }
                     _ => {
                         // RT to RT
@@ -542,18 +532,14 @@ impl EventHandler for FighterBCScheduler {
                                 time,
                             );
                         }
+                        // synchronized event call (bus will wait until all involved device finished).
+                        // todo: add timeout event (should be added to the bus level rather than flight level)
                         d.act_rt2rt(src as u8, dst as u8, wc);
-                        let bus_available = current + (4 + wc as u128) * 4_000_000;
-                        self.timeout = bus_available;
-                        //Some(format!("[{:0>6?}] from {src:?} to {dst:?}\n[{:0>6?}] - message finished\n", current/1000, bus_available/1000))
                     }
                 }
             }
-            None => {
-                // None
-            }
+            None => {}
         }
-        // self.timeout = bus_available; // d.clock.elapsed().as_nanos() + 20_000 + 16_000; // 20us for word transmission and 16us for timeout between messages
     }
 
     fn on_sts(&mut self, d: &mut Device, w: &mut Word) {

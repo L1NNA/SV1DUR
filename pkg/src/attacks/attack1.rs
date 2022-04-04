@@ -1,4 +1,4 @@
-use crate::sys::{
+use crate::sys_bus::{
     AttackType, DefaultBCEventHandler, DefaultEventHandler, Device, ErrMsg, EventHandler,
     EventHandlerEmitter, Mode, Proto, System, Word, WRD_EMPTY,
 };
@@ -64,12 +64,12 @@ pub fn test_attack1() {
     let n_devices = 8;
     // normal device has 4ns delays (while attacker has zero)
     let w_delays = 4000;
-    let mut sys = System::new(n_devices as u32, w_delays);
+    let mut sys_bus = System::new(n_devices as u32, w_delays);
 
     // the last device is kept for attacker
     for m in 0..n_devices - 1 {
         if m == 0 {
-            sys.run_d(
+            sys_bus.run_d(
                 m as u8,
                 Mode::BC,
                 Arc::new(Mutex::new(EventHandlerEmitter {
@@ -84,7 +84,7 @@ pub fn test_attack1() {
                 false,
             );
         } else {
-            sys.run_d(
+            sys_bus.run_d(
                 m as u8,
                 Mode::RT,
                 Arc::new(Mutex::new(EventHandlerEmitter {
@@ -94,7 +94,7 @@ pub fn test_attack1() {
             );
         }
     }
-    sys.run_d(
+    sys_bus.run_d(
         n_devices - 1,
         Mode::RT,
         Arc::new(Mutex::new(EventHandlerEmitter {
@@ -106,8 +106,8 @@ pub fn test_attack1() {
         })),
         true,
     );
-    sys.go();
-    sys.sleep_ms(10);
-    sys.stop();
-    sys.join();
+    sys_bus.go();
+    sys_bus.sleep_ms(10);
+    sys_bus.stop();
+    sys_bus.join();
 }
