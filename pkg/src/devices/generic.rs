@@ -135,7 +135,7 @@ impl Device {
             avg_delta_t = self.delta_t_avg / self.delta_t_count;
         }
         let l = (
-            self.clock.elapsed().as_micros(), // .as_nanos(),
+            self.clock.elapsed().as_nanos(),
             self.mode,
             self.id,
             self.address,
@@ -230,6 +230,7 @@ impl Device {
         self.set_state(State::AwtStsTrxR2R(src, dst));
         self.delta_t_start = self.clock.elapsed().as_nanos();
         self.timeout = self.clock.elapsed().as_nanos() + (WORD_LOAD_TIME + 20_000) * (dword_count as u128 + 4);
+        // self.log(WRD_EMPTY, ErrMsg::MsgBCTimeout(self.timeout));
     }
 }
 

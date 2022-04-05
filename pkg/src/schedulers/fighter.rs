@@ -1,7 +1,7 @@
 use crate::sys::{Router, System};
 use crate::schedulers::{DefaultScheduler, Scheduler};
 use crate::devices::Device;
-use crate::event_handlers::{DefaultEventHandler, EventHandler, EventHandlerEmitter, TestingEventHandler};
+use crate::event_handlers::{DefaultEventHandler, EventHandler, EventHandlerEmitter, TestingEventHandler, BMEventHandler};
 use crate::attacks::{AttackController, AttackHandler, AttackSelection};
 use crate::primitive_types::{ErrMsg, Mode, Word, SystemState, TR, AttackType, WRD_EMPTY};
 use std::time::{Instant, Duration};
@@ -359,6 +359,7 @@ impl EventHandler for FighterBCScheduler {
                 }
                 _ => {}
             }
+            d.log(*w, ErrMsg::MsgGeneral(format!("ErrBit({})", rt)));
         } else if w.service_request_bit() != 0 {
             let (dest, wc) = Address::from(rt).on_sr();
             let item = Event {
@@ -368,6 +369,7 @@ impl EventHandler for FighterBCScheduler {
                 repeating: false,
                 word_count: wc,
             };
+            d.log(*w, ErrMsg::MsgGeneral(format!("SvcReq({})", rt)));
             self.priority_list.push(item, 0);
         }
         self.default_on_sts(d, w);
@@ -536,7 +538,7 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, mut run_time: u64, attac
                 handler: Box::new(FighterBCScheduler::new()),
             })),
             Address::BusMonitor => Arc::new(Mutex::new(EventHandlerEmitter {
-                handler: Box::new(DefaultEventHandler {}),
+                handler: Box::new(BMEventHandler {}),
             })),
             Address::AttackController => Arc::clone(&attack_controller.emitter),
             _ => {

@@ -173,6 +173,7 @@ pub enum ErrMsg {
     MsgBMLog,
     MsgFlight(String),
     MsgBCTimeout(u128),
+    MsgGeneral(String),
 }
 
 impl ErrMsg {
@@ -199,6 +200,7 @@ impl ErrMsg {
             MsgBMLog => "BM".to_owned(),
             MsgFlight(msg) => msg.to_owned(),
             MsgBCTimeout(timeout) => format!("BC Timeout {}", timeout),
+            MsgGeneral(msg) => msg.to_owned(),
         }
     }
 }

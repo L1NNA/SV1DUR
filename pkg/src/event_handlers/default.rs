@@ -107,6 +107,7 @@ pub trait EventHandler: Send {
         if !d.fake {
             d.set_state(State::BusyTrx);
             d.write(Word::new_status(d.address, d.service_request, d.error_bit));
+            d.error_bit = false;
             self.on_data_write(d, w.dword_count());
         }
         let current_cmds = d.reset_all_stateful();
@@ -179,6 +180,7 @@ pub trait EventHandler: Send {
                         // only real RT will responding status message
                         if !d.fake {
                             d.write(Word::new_status(d.address, d.service_request, d.error_bit));
+                            d.error_bit = false;
                         }
                     }
                     self.on_memory_ready(d);
@@ -313,6 +315,20 @@ impl EventHandler for DefaultBCEventHandler {
                 }
             }
         }
+    }
+}
+
+pub struct BMEventHandler {}
+
+impl EventHandler for BMEventHandler {
+    fn on_cmd(&mut self,  d: &mut Device, w: &mut Word) {
+        d.log(*w, ErrMsg::MsgBMLog);
+    }
+    fn on_dat(&mut self,  d: &mut Device, w: &mut Word) {
+        d.log(*w, ErrMsg::MsgBMLog);
+    }
+    fn on_sts(&mut self,  d: &mut Device, w: &mut Word) {
+        d.log(*w, ErrMsg::MsgBMLog);
     }
 }
 
