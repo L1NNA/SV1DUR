@@ -2,6 +2,7 @@ use crate::primitive_types::{Word, ErrMsg, State, Mode, TR, WRD_EMPTY, BROADCAST
 use crate::schedulers::Proto;
 use crate::devices::Device;
 use crate::sys::System;
+use crate::attacks::AttackSelection;
 
 pub trait EventHandler: Send {
     fn on_wrd_rec(&mut self, d: &mut Device, w: &mut Word) {
@@ -238,6 +239,10 @@ pub trait EventHandler: Send {
     fn get_attk_type(&self) -> AttackType {
         AttackType::Benign
     }
+
+    fn set_attk_type(&mut self, attack: AttackSelection) {
+        
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -245,6 +250,21 @@ pub struct DefaultEventHandler {}
 
 impl EventHandler for DefaultEventHandler {}
 
+
+pub struct TestingEventHandler {}
+
+impl EventHandler for TestingEventHandler {
+    fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
+        println!("Test case hit");
+        d.log(*w, ErrMsg::MsgEntCmd);
+    }
+    // fn on_sts(&mut self, d: &mut Device, w: &mut Word) {
+    //     //
+    // }
+    // fn on_dat(&mut self, d: &mut Device, w: &mut Word) {
+    //     //
+    // }
+}
 
 #[derive(Clone, Debug)]
 pub struct DefaultBCEventHandler {

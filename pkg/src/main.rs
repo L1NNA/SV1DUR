@@ -176,8 +176,8 @@ fn main() {
     // let system = eval_sys(0, 4, Proto::RT2RT, true);
 
     let word_delay = 20_000; // nanoseconds to transmit a word.
-    let run_time = 0; // in milliseconds 0 tells us to run for the entirity of the dataset.
-    eval_fighter_sim("sample_data.sqlite", word_delay, run_time, AttackType::Benign);
+    let run_time = 100000; // in milliseconds 0 tells us to run for the entirity of the dataset.
+    eval_fighter_sim("sample_data.sqlite", word_delay, run_time, AttackType::AtkCollisionAttackAgainstTheBus);
 
 
 }

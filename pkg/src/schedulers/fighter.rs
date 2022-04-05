@@ -1,8 +1,8 @@
 use crate::sys::{Router, System};
 use crate::schedulers::{DefaultScheduler, Scheduler};
 use crate::devices::Device;
-use crate::event_handlers::{DefaultEventHandler, EventHandler, EventHandlerEmitter};
-use crate::attacks::AttackController;
+use crate::event_handlers::{DefaultEventHandler, EventHandler, EventHandlerEmitter, TestingEventHandler};
+use crate::attacks::{AttackController, AttackHandler, AttackSelection};
 use crate::primitive_types::{ErrMsg, Mode, Word, SystemState, TR, AttackType, WRD_EMPTY};
 use std::time::{Instant, Duration};
 use priority_queue::DoublePriorityQueue;
@@ -523,7 +523,7 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, mut run_time: u64, attac
     let mut attack_controller = AttackController {
         current_attack: AttackType::Benign,
         emitter: Arc::new(Mutex::new(EventHandlerEmitter {
-            handler: Box::new(DefaultEventHandler {}),
+            handler: Box::new(AttackHandler::new()),
         })),
     };
 
@@ -573,32 +573,41 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, mut run_time: u64, attac
         };
     }
 
-    let attack_time = 30;
+    let attack_time = 10;
     let keep_time = run_time - attack_time;
     sys.go();
-    let start_time = sys.clock.elapsed().as_millis();
-    let mut rng = rand::thread_rng();
-    while(sys.clock.elapsed().as_millis() < run_time as u128) {
-        let rand_num = rng.gen::<f32>();
-        if rand_num < 0.03 {
-            let attack: AttackType = rand::random();
-            let non_flight_controls: Address = rand::random();
-            let source = Address::FlightControls;
-            let destination = non_flight_controls;
-            if [Address::Fuel, Address::Gyro, Address::Positioning, Address::Rudder].contains(&non_flight_controls) {
-                let source = non_flight_controls;
-                let destination = Address::FlightControls;
-            }
-            attack_controller.sabotage(
-                attack,
-                source as u8,
-                destination as u8,
-            );
-        }
-        sys.sleep_ms(10);
-    }
+    // let start_time = sys.clock.elapsed().as_millis();
+    // let mut rng = rand::thread_rng();
+    // while(sys.clock.elapsed().as_millis() < run_time as u128) {
+    //     let rand_num = rng.gen::<f32>();
+    //     if rand_num < 0.03 {
+    //         let attack: AttackType = AttackType::AtkCollisionAttackAgainstTheBus; //rand::random();
+    //         // let non_flight_controls: Address = rand::random();
+    //         // let source = Address::FlightControls;
+    //         // let destination = non_flight_controls;
+    //         // if [Address::Fuel, Address::Gyro, Address::Positioning, Address::Rudder].contains(&non_flight_controls) {
+    //         //     let source = non_flight_controls;
+    //         //     let destination = Address::FlightControls;
+    //         // }
+    //         let source = Address::FlightControls;
+    //         let destination = Address::Ailerons;
+    //         attack_controller.sabotage(
+    //             attack,
+    //             source as u8,
+    //             destination as u8,
+    //         );
+    //         println!("calling sabotage({:?}, {:?}, {:?})", attack, source, destination);
+    //     }
+    //     sys.sleep_ms(60);
+    // }
+    // attack_controller.attack(AttackSelection::Attack2(Address::Ailerons));
     sys.sleep_ms(attack_time);
     // we can add as many as attacks but some may not appear (due to the previous attacks).
+    // attack_controller.sabotage(
+    //     attack,
+    //     Address::FlightControls as u8,
+    //     Address::Brakes as u8,
+    // );
     sys.sleep_ms(keep_time);
     sys.stop();
     sys.join();

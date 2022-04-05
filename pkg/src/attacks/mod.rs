@@ -8,12 +8,15 @@ pub mod attack6;
 pub mod attack7;
 pub mod attack8;
 pub mod attack9;
+pub mod attack_handler;
 
 pub use {
     attack1::test_attack1, attack10::eval_attack10, attack2::test_attack2, attack3::eval_attack3,
     attack4::test_attack4, attack5::eval_attack5, attack6::eval_attack6, attack7::eval_attack7,
     attack8::test_attack8, attack9::eval_attack9
 };
+
+pub use attack_handler::{AttackHandler, AttackSelection};
 
 use attack1::CollisionAttackAgainstTheBus;
 use attack10::CommandInvalidationAttack;
@@ -39,6 +42,9 @@ pub struct AttackController {
 }
 
 impl AttackController {
+    pub fn attack(&mut self, attack: AttackSelection) {
+        self.emitter.lock().unwrap().handler.set_attk_type(attack);
+    }
     pub fn sabotage(&mut self, attack_type: AttackType, source: u8, target: u8) {
         let attack: Box<dyn EventHandler> = match attack_type {
             AttackType::Benign => Box::new(DefaultEventHandler {}),
@@ -120,6 +126,7 @@ impl AttackController {
         };
         self.current_attack = attack_type;
         self.emitter.lock().unwrap().handler = attack;
+        println!("calling sabotage({:?}, {:?}, {:?})", attack_type, source, target);
     }
 }
 

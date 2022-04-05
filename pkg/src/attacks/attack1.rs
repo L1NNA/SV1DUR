@@ -35,6 +35,7 @@ impl EventHandler for CollisionAttackAgainstTheBus {
     }
 
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
+        println!("Should be working");
         d.log(
             *w,
             ErrMsg::MsgAttk("Jamming launched (after cmd)".to_string()),
