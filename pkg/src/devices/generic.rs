@@ -44,7 +44,7 @@ pub struct Device {
     pub clock: Instant,
     pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
     pub transmitters: Vec<Sender<(u128, Word)>>,
-    pub read_queue: Vec<(u128, Word, bool)>,
+    pub read_queue: LinkedList<(u128, Word, bool)>,
     pub write_queue: Vec<(u128, Word)>,
     pub write_delays: u128,
     pub receiver: Receiver<(u128, Word)>,

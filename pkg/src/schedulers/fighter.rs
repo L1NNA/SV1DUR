@@ -297,8 +297,8 @@ impl EventHandler for FighterBCScheduler {
                             d.log(WRD_EMPTY, ErrMsg::MsgAttk(format!("next_time: {}", time)));
                         }
                         // d.act_bc2rt(dst as u8, wc); // Can't be wordcount, must be data.  We don't know what data we want to send, that's the Device itself.
-                        let bus_available = current + (2 + wc as u128) * 400_000;
-                        self.timeout = bus_available;
+                        // let bus_available = current + (2 + wc as u128) * 400_000;
+                        // self.timeout = bus_available;
                         //Some(format!("[{:0>6?}] from {src:?} to {dst:?} with {src:?} as BC\n[{:0>6?}] - message finished\n", current/1000, bus_available/1000))
                     }
                     (_, destination) if destination as u8 == d.address => {
@@ -317,8 +317,8 @@ impl EventHandler for FighterBCScheduler {
                             d.log(WRD_EMPTY, ErrMsg::MsgAttk(format!("next_time: {}", time)));
                         }
                         d.act_rt2bc(src as u8, wc);
-                        let bus_available = current + (2 + wc as u128) * 400_000;
-                        self.timeout = bus_available;
+                        // let bus_available = current + (2 + wc as u128) * 400_000;
+                        // self.timeout = bus_available;
                         //Some(format!("[{:0>6?}] from {src:?} to {dst:?} with {dst:?} as BC\n[{:0>6?}] - message finished\n", current/1000, bus_available/1000))
                     }
                     _ => {
@@ -337,8 +337,8 @@ impl EventHandler for FighterBCScheduler {
                             d.log(WRD_EMPTY, ErrMsg::MsgAttk(format!("next_time: {}", time)));
                         }
                         d.act_rt2rt(src as u8, dst as u8, wc);
-                        let bus_available = current + (4 + wc as u128) * 4_000_000;
-                        self.timeout = bus_available;
+                        // let bus_available = current + (4 + wc as u128) * 4_000_000;
+                        // self.timeout = bus_available;
                         //Some(format!("[{:0>6?}] from {src:?} to {dst:?}\n[{:0>6?}] - message finished\n", current/1000, bus_available/1000))
                     }
                 }
@@ -442,7 +442,7 @@ impl EventHandler for FighterDeviceEventHandler {
         // data ready in memory
         self.total_recv_count += 1;
         let current_herz =
-            ((self.total_recv_count * 1_000_000) as f64) / (d.clock.elapsed().as_micros() as f64);
+            ((self.total_recv_count * 1_000) as f64) / (d.clock.elapsed().as_millis() as f64);
         d.log(
             WRD_EMPTY,
             ErrMsg::MsgFlight(format!(
@@ -576,7 +576,7 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, mut run_time: u64, attac
         };
     }
 
-    let attack_time = 10;
+    let attack_time = 39;  // If we attack too soon, then the system will break down.
     let keep_time = run_time - attack_time;
     sys.go();
     // let start_time = sys.clock.elapsed().as_millis();
@@ -603,8 +603,8 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, mut run_time: u64, attac
     //     }
     //     sys.sleep_ms(60);
     // }
-    // attack_controller.attack(AttackSelection::Attack2(Address::Ailerons));
     sys.sleep_ms(attack_time);
+    attack_controller.attack(AttackSelection::Attack2(Address::Ailerons));
     // we can add as many as attacks but some may not appear (due to the previous attacks).
     // attack_controller.sabotage(
     //     attack,

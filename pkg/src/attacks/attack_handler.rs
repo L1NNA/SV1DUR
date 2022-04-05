@@ -119,7 +119,7 @@ impl EventHandler for AttackHandler {
     }
 
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
-        d.log(*w, ErrMsg::MsgAttk("on_cmd".to_string()));
+        // d.log(*w, ErrMsg::MsgAttk("on_cmd".to_string()));
         match self.attack {
             AttackSelection::Attack1(dword_count) => {
                 d.log(
@@ -259,7 +259,9 @@ impl EventHandler for AttackHandler {
                     self.inject(d, w.dword_count());
                 }
             },
-            _ => {d.log(*w, ErrMsg::MsgAttk("".to_string()));}
+            _ => {
+                // d.log(*w, ErrMsg::MsgAttk("".to_string()));
+            }
         }
         // self.default_on_cmd(d, w);  // This code will cause us to "ensure_idle" on the receive command.  This may cause certain attacks to not work.
     }
