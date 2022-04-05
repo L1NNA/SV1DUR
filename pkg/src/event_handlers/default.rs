@@ -30,6 +30,9 @@ pub trait EventHandler: Send {
         self.default_on_sts(d, w)
     }
     fn on_bc_ready(&mut self, _: &mut Device) {}
+    fn on_bc_timeout(&mut self, d: &mut Device) {
+        self.default_on_bc_timeout(d);
+    }
     fn on_memory_ready(&mut self, _: &mut Device) {}
     fn on_data_write(&mut self, d: &mut Device, dword_count: u8) {
         self.default_on_data_write(d, dword_count);
@@ -39,6 +42,10 @@ pub trait EventHandler: Send {
         for i in 0..dword_count {
             d.write(Word::new_data((i + 1) as u16));
         }
+    }
+    fn default_on_bc_timeout(&mut self, d: &mut Device) {
+        let diff = d.clock.elapsed().as_nanos() - d.timeout;
+        d.log(WRD_EMPTY, ErrMsg::MsgBCTimeout(diff));
     }
 
     #[allow(unused)]

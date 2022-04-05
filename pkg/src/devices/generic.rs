@@ -1,5 +1,5 @@
 use std::fmt;
-use crate::primitive_types::{Mode, State, Word, ErrMsg, AttackType, WRD_EMPTY, TR};
+use crate::primitive_types::{Mode, State, Word, ErrMsg, AttackType, WRD_EMPTY, TR, WORD_LOAD_TIME};
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, RecvError, select, after};
 use std::time::{Duration, Instant};
 use std::collections::LinkedList;
@@ -51,6 +51,8 @@ pub struct Device {
     pub delta_t_avg: u128,
     pub delta_t_start: u128,
     pub delta_t_count: u128,
+    pub timeout: u128,
+    pub timeout_times: u128,
 }
 
 impl Device {
@@ -121,6 +123,7 @@ impl Device {
         self.dword_count = 0;
         self.dword_count_expected = 0;
         self.in_brdcst = false;
+        self.timeout = 0;
         // return the previous number of cmd
         // in case it shouldn't be reseted.
         return current_cmd;
@@ -193,6 +196,7 @@ impl Device {
         }
         self.set_state(State::AwtStsRcvB2R(dest));
         self.delta_t_start = self.clock.elapsed().as_nanos();
+        self.timeout = self.clock.elapsed().as_nanos() + (WORD_LOAD_TIME + 20_000) * (data.len() as u128 + 2);
     }
 
     #[allow(unused)]
@@ -205,6 +209,7 @@ impl Device {
         // }
         self.set_state(State::AwtStsRcvB2R(dest));
         self.delta_t_start = self.clock.elapsed().as_nanos();
+        self.timeout = self.clock.elapsed().as_nanos() + (WORD_LOAD_TIME + 20_000) * (dword_count as u128 + 2);
     }
 
     pub fn act_rt2bc(&mut self, src: u8, dword_count: u8) {
@@ -214,6 +219,7 @@ impl Device {
         self.dword_count_expected = dword_count;
         self.set_state(State::AwtStsTrxR2B(src));
         self.delta_t_start = self.clock.elapsed().as_nanos();
+        self.timeout = self.clock.elapsed().as_nanos() + (WORD_LOAD_TIME + 20_000) * (dword_count as u128 + 2);
     }
     
     pub fn act_rt2rt(&mut self, src: u8, dst: u8, dword_count: u8) {
@@ -223,6 +229,7 @@ impl Device {
         // expecting to recieve dword_count number of words
         self.set_state(State::AwtStsTrxR2R(src, dst));
         self.delta_t_start = self.clock.elapsed().as_nanos();
+        self.timeout = self.clock.elapsed().as_nanos() + (WORD_LOAD_TIME + 20_000) * (dword_count as u128 + 4);
     }
 }
 

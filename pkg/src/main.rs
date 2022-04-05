@@ -68,48 +68,6 @@ fn test_address_functions() {
     }
 }
 
-
-fn test_fighter_scheduler() {
-    let (_trans, recv) = bounded(512);
-    let mut bc = Device{
-        fake: false,
-        atk_type: AttackType::Benign,
-        ccmd: 0,
-        mode: Mode::BC,
-        state: State::Idle,
-        error_bit: false,
-        service_request: false,
-        memory: Vec::new(),
-        number_of_current_cmd: 0,
-        in_brdcst: false,
-        address: Address::BusControl as u8,  // Currently does not 
-        id: Address::BusControl as u32,
-        dword_count: 0,
-        dword_count_expected: 0,
-        clock: Instant::now(),
-        logs: Vec::new(),
-        transmitters: Vec::new(),
-        read_queue: Vec::new(),
-        write_queue: Vec::new(),
-        write_delays: 0,
-        receiver: recv,
-        delta_t_avg: 0,
-        delta_t_start: 0,
-        delta_t_count: 0,
-    };
-    let mut scheduler = FighterBCScheduler::new();
-    // let mut output: String = String::new();
-    for _ in 0..200 {
-        // if let Some(new_str) = 
-            scheduler.on_bc_ready(&mut bc);
-            // {
-            //     output = format!("{}{}", output, new_str);
-            // }
-
-    }
-    // println!("{}", output);
-}
-
 pub fn test_message_timing() {
     let (_trans, recv) = bounded(512);
     let mut device_obj = Device {
@@ -137,6 +95,8 @@ pub fn test_message_timing() {
         delta_t_count: 0,
         delta_t_start: 0,
         write_delays: 0,
+        timeout: 0,
+        timeout_times: 0,
     };
     let state_start = device_obj.clock.elapsed().as_nanos();
     device_obj.set_state(State::Idle);

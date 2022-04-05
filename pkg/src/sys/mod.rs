@@ -1,6 +1,6 @@
 use crate::primitive_types::{ErrMsg, Word, Mode, State, AttackType, WRD_EMPTY,
     CONFIG_SAVE_DEVICE_LOGS, CONFIG_SAVE_SYS_LOGS, ATK_DEFAULT_DELAYS,
-    WORD_LOAD_TIME, COLLISION_TIME};
+    WORD_LOAD_TIME, COLLISION_TIME, BC_WARMUP_STEPS};
     use crate::event_handlers::{EventHandler, DefaultEventHandler, EventHandlerEmitter, DefaultBCEventHandler};
     use crate::devices::{Device, format_log, format_log_bm};
     use crate::schedulers::{DefaultScheduler, Scheduler, Proto};
@@ -172,6 +172,8 @@ use crate::primitive_types::{ErrMsg, Word, Mode, State, AttackType, WRD_EMPTY,
                 delta_t_count: 0,
                 delta_t_start: 0,
                 write_delays: w_delay,
+                timeout: 0,
+                timeout_times: 0,
             };
             let device_name = format!("{}", device_obj);
             let go = Arc::clone(&self.go);
@@ -197,17 +199,31 @@ use crate::primitive_types::{ErrMsg, Word, Mode, State, AttackType, WRD_EMPTY,
                     let mut device = device_mtx_thread_local.lock().unwrap();
                     let mut time_bus_available = 0;
                     let mut wq = device.write_queue.len();
+                    //warmup offset
+                    let mut bc_step = 0;
                     loop {
                         if !go.load(Ordering::Relaxed) || device.state == State::Off {
                             spin_sleeper.sleep_ns(1000_000);
                         }
                         if device.state != State::Off {
                             if device.mode == Mode::BC {
+                                let mut timeout = device.timeout;
+                                let current = device.clock.elapsed().as_nanos();
+                                if bc_step <= BC_WARMUP_STEPS {
+                                    timeout *= 10;
+                                }
                                 if device.state == State::Idle {
                                     device.log(WRD_EMPTY, ErrMsg::MsgBCReady);
+                                    device.timeout = 0;
                                     let mut local_emitter = device_handler_emitter.lock().unwrap();
                                     local_emitter.handler.on_bc_ready(&mut device);
-                                } 
+                                    bc_step += 1;
+                                } else if timeout > 0 && current > timeout {
+                                    device.timeout_times += 1;
+                                    let mut local_emitter = device_handler_emitter.lock().unwrap();
+                                    device.reset_all_stateful();
+                                }
+                                
                                 // TODO: I need to find a new way to do timeouts.
                                 // else if local_router.scheduler.bus_available() < device.clock.elapsed().as_nanos() {
                                 //     device.log(WRD_EMPTY, ErrMsg::MsgAttk("timeout reached".to_string()));

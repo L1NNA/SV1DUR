@@ -11,6 +11,7 @@ pub const CONFIG_SAVE_SYS_LOGS: bool = true;
 pub const BROADCAST_ADDRESS: u8 = 31;
 pub const WORD_LOAD_TIME: u128 = 20_000;
 pub const COLLISION_TIME: u128 = WORD_LOAD_TIME;
+pub const BC_WARMUP_STEPS: u128 = 20;
 
 
 #[derive(Clone)]
@@ -171,6 +172,7 @@ pub enum ErrMsg {
     // MB log
     MsgBMLog,
     MsgFlight(String),
+    MsgBCTimeout(u128),
 }
 
 impl ErrMsg {
@@ -196,6 +198,7 @@ impl ErrMsg {
             MsgMCXClr(mem_len) => format!("MCX[{}] Clr", mem_len),
             MsgBMLog => "BM".to_owned(),
             MsgFlight(msg) => msg.to_owned(),
+            MsgBCTimeout(timeout) => format!("BC Timeout {}", timeout),
         }
     }
 }
