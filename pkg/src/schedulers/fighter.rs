@@ -294,6 +294,7 @@ impl EventHandler for FighterBCScheduler {
                                 },
                                 time,
                             );
+                            d.log(WRD_EMPTY, ErrMsg::MsgAttk(format!("next_time: {}", time)));
                         }
                         // d.act_bc2rt(dst as u8, wc); // Can't be wordcount, must be data.  We don't know what data we want to send, that's the Device itself.
                         let bus_available = current + (2 + wc as u128) * 400_000;
@@ -313,6 +314,7 @@ impl EventHandler for FighterBCScheduler {
                                 },
                                 time,
                             );
+                            d.log(WRD_EMPTY, ErrMsg::MsgAttk(format!("next_time: {}", time)));
                         }
                         d.act_rt2bc(src as u8, wc);
                         let bus_available = current + (2 + wc as u128) * 400_000;
@@ -332,6 +334,7 @@ impl EventHandler for FighterBCScheduler {
                                 },
                                 time,
                             );
+                            d.log(WRD_EMPTY, ErrMsg::MsgAttk(format!("next_time: {}", time)));
                         }
                         d.act_rt2rt(src as u8, dst as u8, wc);
                         let bus_available = current + (4 + wc as u128) * 4_000_000;

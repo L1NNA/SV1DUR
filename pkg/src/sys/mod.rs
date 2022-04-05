@@ -386,6 +386,7 @@ use crate::primitive_types::{ErrMsg, Word, Mode, State, AttackType, WRD_EMPTY,
                             // }
                         }
                         if exit.load(Ordering::Relaxed) {
+                            device.log(WRD_EMPTY, ErrMsg::MsgAttk("Ending thread".to_string()));
                             //exiting
                             if CONFIG_SAVE_DEVICE_LOGS {
                                 println!(
