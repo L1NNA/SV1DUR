@@ -90,7 +90,7 @@ pub fn test_message_timing() {
         clock: Instant::now(),
         transmitters: Vec::new(),
         write_queue: Vec::new(),
-        read_queue: LinkedList::new(),
+        read_queue: VecDeque::new(),
         receiver: recv,
         delta_t_avg: 0,
         delta_t_count: 0,

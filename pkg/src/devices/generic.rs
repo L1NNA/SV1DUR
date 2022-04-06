@@ -2,7 +2,7 @@ use std::fmt;
 use crate::primitive_types::{Mode, State, Word, ErrMsg, AttackType, WRD_EMPTY, TR, WORD_LOAD_TIME};
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, RecvError, select, after};
 use std::time::{Duration, Instant};
-use std::collections::LinkedList;
+use std::collections::{LinkedList, VecDeque};
 
 pub const CONFIG_PRINT_LOGS: bool = false;
 
@@ -44,7 +44,7 @@ pub struct Device {
     pub clock: Instant,
     pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
     pub transmitters: Vec<Sender<(u128, Word)>>,
-    pub read_queue: LinkedList<(u128, Word, bool)>,
+    pub read_queue: VecDeque<(u128, Word, bool)>,
     pub write_queue: Vec<(u128, Word)>,
     pub write_delays: u128,
     pub receiver: Receiver<(u128, Word)>,
