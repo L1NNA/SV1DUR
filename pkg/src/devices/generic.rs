@@ -22,7 +22,7 @@ pub fn format_log(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> Strin
 
 
 pub fn format_log_bm(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> String {
-    return format!("{},{}", l.0, l.5);
+    return format!("{},{:#022b},{}", l.0, l.5.all(), l.5.attk());
 }
 
 #[derive(Clone, Debug)]

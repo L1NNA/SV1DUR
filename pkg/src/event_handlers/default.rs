@@ -249,7 +249,7 @@ pub trait EventHandler: Send {
         AttackType::Benign
     }
 
-    fn set_attk_type(&mut self, attack: AttackSelection) {
+    fn set_attk_type(&mut self, attack: AttackSelection, rapid_fire: bool) {
         
     }
 }

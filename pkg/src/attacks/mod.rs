@@ -42,8 +42,8 @@ pub struct AttackController {
 }
 
 impl AttackController {
-    pub fn attack(&mut self, attack: AttackSelection) {
-        self.emitter.lock().unwrap().handler.set_attk_type(attack);
+    pub fn attack(&mut self, attack: AttackSelection, rapid_fire: bool) {
+        self.emitter.lock().unwrap().handler.set_attk_type(attack, rapid_fire);
     }
     pub fn sabotage(&mut self, attack_type: AttackType, source: u8, target: u8) {
         let attack: Box<dyn EventHandler> = match attack_type {

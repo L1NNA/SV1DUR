@@ -376,11 +376,6 @@ use crate::primitive_types::{ErrMsg, Word, Mode, State, AttackType, WRD_EMPTY,
                                 let (time, mut word, valid) = device.read_queue.pop_front().unwrap();
                                 let mut local_emitter = device_handler_emitter.lock().unwrap();
                                 if !valid {
-                                    let new_atk_type = local_emitter.handler.get_attk_type();
-                                    if new_atk_type != device.atk_type {
-                                        device.reset_all_stateful();
-                                        device.atk_type = new_atk_type;
-                                    }
                                     local_emitter.handler.on_err_parity(&mut device, &mut word);
                                 } else if word.sync() == 1 {
                                     // device.ensure_idle();

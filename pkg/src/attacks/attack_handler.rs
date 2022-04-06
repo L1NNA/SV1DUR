@@ -1,5 +1,5 @@
 use crate::event_handlers::{EventHandler};
-use crate::primitive_types::{Address, State, Word, WRD_EMPTY, ErrMsg, TR};
+use crate::primitive_types::{Address, State, Word, WRD_EMPTY, ErrMsg, TR, ModeCode, AttackType};
 use crate::devices::Device;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -13,7 +13,7 @@ pub enum AttackSelection {
     Attack6(Address),
     Attack7(Address),
     Attack8(Address),
-    Attack9(Address),
+    Attack9(Address, Address),
     Attack10(Address)
 }
 
@@ -45,14 +45,12 @@ impl AttackHandler {
             );
             d.write(w);
         }
-        self.end_attack();
     }
 
-    pub fn inject_command_word(&mut self, d: &mut Device, target: Address, mode_code: u8) {
-        let mut w = Word::new_cmd(target as u8, mode_code, TR::Receive);
-        w.set_mode(1);
+    pub fn inject_command_word(&mut self, d: &mut Device, target: Address, mode_code: ModeCode) {
+        let mut w = Word::new_cmd(target as u8, mode_code as u8, TR::Receive);
+        w.set_mode(TR::Transmit as u8);
         d.write(w);
-        self.end_attack();
     }
 
     pub fn inject_status_word(&mut self, d: &mut Device, target: Address) {
@@ -61,7 +59,6 @@ impl AttackHandler {
             WRD_EMPTY,
             ErrMsg::MsgAttk(format!("Fake status injected!").to_string()),
         );
-        self.end_attack();
     }
 
     pub fn start_mitm(&mut self, d: &mut Device) {
@@ -69,15 +66,13 @@ impl AttackHandler {
             WRD_EMPTY,
             ErrMsg::MsgAttk(format!("Starting MITM attack...").to_string()),
         );
-        d.set_state(State::Off);
         let word_count = self.words_expected;
-        let mut w = Word::new_cmd(self.temp_source as u8, word_count, TR::Receive);
+        let mut w = Word::new_cmd(self.temp_source as u8, word_count, TR::Receive); // This sends the device to AwtData immediately.  We don't need to send a TR::Transmit command
         d.write(w);
         w.set_address(self.temp_target as u8);
         w.set_tr(TR::Transmit as u8);
         d.write(w);
-        d.set_state(State::Idle);
-        self.end_attack();
+        self.state = State::Idle;
     }
 
     pub fn desynchronize_rt(&mut self, d: &mut Device, target: Address) {
@@ -90,7 +85,6 @@ impl AttackHandler {
         let word_count = 17;
         d.write(Word::new_cmd(target as u8, word_count, TR::Receive));
         d.write(Word::new_data(0x000F));
-        self.end_attack();
     }
 
     pub fn invalidate_command(&mut self, d: &mut Device, target: Address) {
@@ -101,7 +95,6 @@ impl AttackHandler {
             WRD_EMPTY,
             ErrMsg::MsgAttk(format!("Attacker>> Injecting fake command on RT{}", w).to_string()),
         );
-        self.end_attack();
     }
 
     pub fn end_attack(&mut self) {
@@ -113,12 +106,35 @@ impl AttackHandler {
 }
 
 impl EventHandler for AttackHandler {
-    fn set_attk_type(&mut self, attack: AttackSelection) {
-        println!("Setting attack type");
+    fn set_attk_type(&mut self, attack: AttackSelection, rapid_fire: bool) {
+        // println!("Setting attack type");
         self.attack = attack;
+        self.rapid_fire = rapid_fire;
+    }
+
+    fn get_attk_type(&self) -> AttackType {
+        let attack = match self.attack {
+            AttackSelection::Attack1(_) => AttackType::AtkCollisionAttackAgainstTheBus,
+            AttackSelection::Attack2(_) => AttackType::AtkCollisionAttackAgainstAnRT,
+            AttackSelection::Attack3(_) => AttackType::AtkDataThrashingAgainstRT,
+            AttackSelection::Attack4(_, _) => AttackType::AtkMITMAttackOnRTs,
+            AttackSelection::Attack5(_) => AttackType::AtkShutdownAttackRT,
+            AttackSelection::Attack6(_) => AttackType::AtkFakeStatusReccmd,
+            AttackSelection::Attack7(_) => AttackType::AtkFakeStatusTrcmd,
+            AttackSelection::Attack8(_) => AttackType::AtkDesynchronizationAttackOnRT,
+            AttackSelection::Attack9(_, _) => AttackType::AtkDataCorruptionAttack,
+            AttackSelection::Attack10(_) => AttackType::AtkCommandInvalidationAttack,
+            _ => AttackType::Benign,
+        };
+        //println!("attacktype is {:?}", attack);
+        return attack;
     }
 
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
+        let new_atk_type = self.get_attk_type();
+        if d.atk_type != new_atk_type {
+            d.atk_type = new_atk_type;
+        }
         // d.log(*w, ErrMsg::MsgAttk("on_cmd".to_string()));
         match self.attack {
             AttackSelection::Attack1(dword_count) => {
@@ -127,6 +143,7 @@ impl EventHandler for AttackHandler {
                     ErrMsg::MsgAttk("Jamming launched (after cmd)".to_string()),
                 );
                 self.inject(d, dword_count);
+                self.end_attack();
             },
             AttackSelection::Attack2(target) => {
                 if w.address() == target as u8 { // Should we look at handling transmit and receive differently?
@@ -135,6 +152,7 @@ impl EventHandler for AttackHandler {
                         ErrMsg::MsgAttk("Jamming launched (after cmd)".to_string()),
                     );
                     self.inject(d, w.dword_count());
+                    self.end_attack();
                 }
             },
             AttackSelection::Attack3(target) => {
@@ -143,6 +161,7 @@ impl EventHandler for AttackHandler {
                         *w,
                         ErrMsg::MsgAttk(format!(">>> Thrashing triggered (after cmd_word)").to_string()),
                     );
+                    self.words_expected = w.dword_count();
                     self.state = State::AwtData
                 }
             },
@@ -151,35 +170,35 @@ impl EventHandler for AttackHandler {
                 // State::AwtStsTrxR2R means that we have found the receiver but not the transmitter.
                 if self.state != State::AwtData {
                     if w.tr() == TR::Receive && w.address() == dst_target as u8 {
-                        self.words_expected == w.dword_count();
-                        self.state == State::AwtStsTrxR2R(0, 0);
+                        self.words_expected = w.dword_count();
+                        self.state = State::AwtStsTrxR2R(0, 0);
                         d.log(
                             WRD_EMPTY,
                             ErrMsg::MsgAttk(
-                                format!("Atttacker>> Target dst identified (RT{})", dst_target as u8)
-                                    .to_string(),
+                                format!("Atttacker>> Target dst identified (RT{})", dst_target as u8),
                             ),
                         );
                     } else if w.tr() == TR::Transmit && w.address() == src_target as u8 {
-                        self.state == State::AwtData;
-                        d.log(
-                            WRD_EMPTY,
-                            ErrMsg::MsgAttk(
-                                format!("Atttacker>> Target src identified (RT{})", src_target as u8)
-                                    .to_string(),
-                            ),
-                        );
+                        if let State::AwtStsTrxR2R(_, _) = self.state {
+                            self.state == State::AwtData;
+                            d.log(
+                                WRD_EMPTY,
+                                ErrMsg::MsgAttk(
+                                    format!("Atttacker>> Target src identified (RT{})", src_target as u8),
+                                ),
+                            );
+                        }
                     }
                 }
             },
             AttackSelection::Attack5(target) => {
+                // TODO: This attack won't work as is.  We need to find an opening in the bus traffic and then insert the command.
                 if w.address() == target as u8 {
                     d.log(
                         WRD_EMPTY,
                         ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", target as u8).to_string()),
                     );
-                    let mode_code = 4;
-                    self.inject_command_word(d, target, mode_code);
+                    self.state = State::AwtStsRcvR2R(0, 0);
                 }
             },
             AttackSelection::Attack6(target) => {
@@ -192,7 +211,7 @@ impl EventHandler for AttackHandler {
                                 format!("Attacker>> Target detected (RT{:02})", target as u8).to_string(),
                             ),
                         );
-                        self.state = State::AwtData;
+                        self.state = State::AwtStsRcvR2R(0, 0);
                         self.words_expected = w.dword_count();
                         self.temp_source = Address::from(w.address());
                         d.log(
@@ -217,6 +236,7 @@ impl EventHandler for AttackHandler {
                         ),
                     );
                     self.inject_status_word(d, target);
+                    self.end_attack();
                 }
             },
             AttackSelection::Attack8(target) => {
@@ -233,19 +253,30 @@ impl EventHandler for AttackHandler {
                     );
                 }
             },
-            AttackSelection::Attack9(target) => {
-                if w.address() == target as u8 && w.tr() == TR::Transmit {
-                    self.words_expected = w.dword_count();
-
-                    // do we need the sub address?
-                    d.log(
-                        *w,
-                        ErrMsg::MsgAttk(
-                            format!("Attacker>> Target detected(RT{})", target as u8).to_string(),
-                        ),
-                    );
-                    self.inject_status_word(d, target);
-                    self.inject(d, self.words_expected);
+            AttackSelection::Attack9(src_target, dst_target) => {
+                // State::AwtData means both targets are identified. 
+                // State::AwtStsTrxR2R means that we have found the receiver but not the transmitter.
+                if self.state != State::AwtData {
+                    if w.tr() == TR::Receive && w.address() == dst_target as u8 {
+                        self.words_expected = w.dword_count();
+                        self.state = State::AwtStsTrxR2R(0, 0);
+                        d.log(
+                            WRD_EMPTY,
+                            ErrMsg::MsgAttk(
+                                format!("Atttacker>> Target dst identified (RT{})", dst_target as u8),
+                            ),
+                        );
+                    } else if w.tr() == TR::Transmit && w.address() == src_target as u8 {
+                        if let State::AwtStsTrxR2R(_, _) = self.state {
+                            self.state == State::AwtData;
+                            d.log(
+                                WRD_EMPTY,
+                                ErrMsg::MsgAttk(
+                                    format!("Atttacker>> Target src identified (RT{})", src_target as u8),
+                                ),
+                            );
+                        }
+                    }
                 }
             },
             AttackSelection::Attack10(target) => {
@@ -257,6 +288,7 @@ impl EventHandler for AttackHandler {
                         ),
                     );
                     self.inject(d, w.dword_count());
+                    self.end_attack();
                 }
             },
             _ => {
@@ -283,17 +315,9 @@ impl EventHandler for AttackHandler {
                             WRD_EMPTY,
                             ErrMsg::MsgAttk(format!(">>> Fake command injected!").to_string()),
                         );
-                        let mode_code = 30;
+                        let mode_code = ModeCode::ClearCache;
                         self.inject_command_word(d, target, mode_code);
-                    }
-                }
-            },
-            AttackSelection::Attack6(target) => {
-                if self.state == State::AwtData {
-                    self.words_expected -= 1;
-                    if self.words_expected == 0 {
-                        self.inject_status_word(d, target);
-                        self.state = State::Idle
+                        self.end_attack();
                     }
                 }
             },
@@ -305,6 +329,11 @@ impl EventHandler for AttackHandler {
                     }
                 }
             },
+            AttackSelection::Attack9(src_target, dst_target) => {
+                if let State::AwtData = self.state {
+                    self.state = State::AwtStsRcvR2R(0, 0);
+                }
+            }
             _ => {}
 
         }
@@ -322,8 +351,9 @@ impl EventHandler for AttackHandler {
                 self.inject(d, dword_count as u8);
             },
             AttackSelection::Attack4(src_target, dst_target) => {
-                if src_target as u8 == w.address() && self.state == State::AwtData {
+                if dst_target as u8 == w.address() && self.state == State::AwtData {
                     self.start_mitm(d);
+                    self.end_attack();
                 } else if dst_target as u8 == w.address() && self.state == State::Idle {
                     d.log(
                         WRD_EMPTY,
@@ -339,16 +369,32 @@ impl EventHandler for AttackHandler {
                         WRD_EMPTY,
                         ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", target as u8).to_string()),
                     );
-                    let mode_code = 4;
+                    let mode_code = ModeCode::TXshutdown;
                     self.inject_command_word(d, target, mode_code);
                 }
             },
+            AttackSelection::Attack6(target) => {
+                if let State::AwtStsRcvR2R(_, _) = self.state {
+                    self.inject_command_word(d, target, ModeCode::NoCode);
+                    self.inject(d, self.words_expected);
+                    self.inject_status_word(d, target);
+                    self.end_attack();
+                }
+            }
             AttackSelection::Attack8(target) => {
                 match self.state {
                     State::AwtStsTrxR2R(_,_) => self.desynchronize_rt(d, target),
                     _ => {},
                 };
             },
+            AttackSelection::Attack9(src_target, dst_target) => {
+                if let State::AwtStsRcvR2R(_, _) = self.state {
+                    self.inject_command_word(d, dst_target, ModeCode::NoCode);
+                    self.inject_status_word(d, src_target);
+                    self.inject(d, self.words_expected);
+                    self.end_attack();
+                }
+            }
             _ => {}
         }
         // self.default_on_sts(d, w);

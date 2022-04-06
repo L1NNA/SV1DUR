@@ -580,10 +580,23 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, mut run_time: u64, attac
 
     let attack_time = 39;  // If we attack too soon, then the system will break down.
     let keep_time = run_time - attack_time;
+    let mut attacks = vec![
+        AttackSelection::NoAttack,
+        AttackSelection::Attack2(Address::Ailerons),
+        AttackSelection::Attack4(Address::FlightControls, Address::Rudder),
+        AttackSelection::Attack5(Address::Fuel),
+        AttackSelection::Attack9(Address::FlightControls, Address::Engine),
+        // AttackSelection::Attack1(Address::Ailerons),  // This is too obvious
+        // AttackSelection::Attack3(Address::Ailerons),  // Relies on a "Sensing" RT that doesn't transmit when the line is active
+        // AttackSelection::Attack6(Address::Ailerons),  // Relies on a "Sensing" RT that doesn't transmit when the line is active
+        // AttackSelection::Attack7(Address::Ailerons),  // Relies on a "Sensing" RT that doesn't transmit when the line is active
+        // AttackSelection::Attack8(Address::Ailerons),  // Relies on a "Sensing" and a "dumb" RT
+        // AttackSelection::Attack10(Address::Ailerons), // Relies on a "dumb" RT that doesn't check the sync bits
+    ];
     sys.go();
-    // let start_time = sys.clock.elapsed().as_millis();
-    // let mut rng = rand::thread_rng();
-    // while(sys.clock.elapsed().as_millis() < run_time as u128) {
+    let start_time = sys.clock.elapsed().as_millis();
+    let mut rng = rand::thread_rng();
+    while(sys.clock.elapsed().as_millis() < run_time as u128) {
     //     let rand_num = rng.gen::<f32>();
     //     if rand_num < 0.03 {
     //         let attack: AttackType = AttackType::AtkCollisionAttackAgainstTheBus; //rand::random();
@@ -603,17 +616,30 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, mut run_time: u64, attac
     //         );
     //         println!("calling sabotage({:?}, {:?}, {:?})", attack, source, destination);
     //     }
-    //     sys.sleep_ms(60);
-    // }
-    sys.sleep_ms(attack_time);
-    attack_controller.attack(AttackSelection::Attack2(Address::Ailerons));
+        let attack = attacks.pop();
+        match attack {
+            Some(attack) => {
+                let rand_num = rng.gen::<f32>();
+                let mut rapid_fire = false;
+                if rand_num < 0.3 {
+                    rapid_fire = true;
+                }
+                attack_controller.attack(attack, rapid_fire);
+            },
+            _ => {}
+        }
+        sys.sleep_ms(run_time/(attacks.len() as u64 + 2));
+    }
+
+    // sys.sleep_ms(attack_time);
+    // attack_controller.attack(AttackSelection::Attack2(Address::Ailerons));
     // we can add as many as attacks but some may not appear (due to the previous attacks).
     // attack_controller.sabotage(
     //     attack,
     //     Address::FlightControls as u8,
     //     Address::Brakes as u8,
     // );
-    sys.sleep_ms(keep_time);
+    // sys.sleep_ms(keep_time);
     sys.stop();
     sys.join();
 }
