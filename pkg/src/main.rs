@@ -27,8 +27,9 @@ use devices::{Device, format_log};
 // use simulation::{fighter_simulation, extract_contents};
 use sys::{eval_sys};
 use terminals::{ComponentInfo, SplitInt};
-use std::collections::LinkedList;
+use std::collections::{LinkedList, VecDeque};
 // use libc::nice;
+use std::env;
 
 #[allow(unused)]
 fn test_address_functions() {
@@ -113,6 +114,9 @@ pub fn test_message_timing() {
 }
 
 fn main() {
+    let args: Vec<String> = env::args().collect();
+    let mut database: &str = "sample_data.sqlite";
+    let mut run_time: u64 = 0;
     // eval_all();
     // eval_sys(0, 3, Proto::RT2RT, true);
     // test_attack0();
@@ -134,10 +138,17 @@ fn main() {
     // unsafe{nice(-20)};
     // #[allow(unused)]
     // let system = eval_sys(0, 4, Proto::RT2RT, true);
+    if args.len() > 1 {
+        database = &args[1];
+        if args.len() > 2 {
+            match (&args[2]).parse() {
+                Ok(val) => {run_time = val;}, // in milliseconds 0 tells us to run for the entirity of the dataset.
+                _ => {}
+            }
+        }
+    }
 
-    let word_delay = 20_000; // nanoseconds to transmit a word.
-    let run_time = 100000; // in milliseconds 0 tells us to run for the entirity of the dataset.
-    eval_fighter_sim("sample_data.sqlite", word_delay, run_time, AttackType::AtkCollisionAttackAgainstTheBus);
+    eval_fighter_sim(database, run_time);
 
 
 }

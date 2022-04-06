@@ -3,7 +3,7 @@ use crate::schedulers::{DefaultScheduler, Scheduler};
 use crate::devices::Device;
 use crate::event_handlers::{DefaultEventHandler, EventHandler, EventHandlerEmitter, TestingEventHandler, BMEventHandler};
 use crate::attacks::{AttackController, AttackHandler, AttackSelection};
-use crate::primitive_types::{ErrMsg, Mode, Word, SystemState, TR, AttackType, WRD_EMPTY};
+use crate::primitive_types::{ErrMsg, Mode, Word, SystemState, TR, AttackType, WRD_EMPTY, WORD_LOAD_TIME};
 use std::time::{Instant, Duration};
 use priority_queue::DoublePriorityQueue;
 use crate::primitive_types::{Address, MsgPri};
@@ -504,7 +504,7 @@ fn get_runtime(database: &str) -> Result<u64> {
     }
 }
 
-pub fn eval_fighter_sim(database: &str, w_delays: u128, mut run_time: u64, attack: AttackType) {
+pub fn eval_fighter_sim(database: &str, mut run_time: u64) {
     // let database = "sample_data.sqlite";
     let devices = vec![
         Address::BusControl,
@@ -523,7 +523,7 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, mut run_time: u64, attac
         Address::AttackController,
     ];
     let total_devices = devices.len() as u32;
-    let mut sys = System::new(total_devices, w_delays);
+    let mut sys = System::new(total_devices, WORD_LOAD_TIME);
 
     let mut attack_controller = AttackController {
         current_attack: AttackType::Benign,
@@ -586,7 +586,7 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, mut run_time: u64, attac
         AttackSelection::Attack4(Address::FlightControls, Address::Rudder),
         AttackSelection::Attack5(Address::Fuel),
         AttackSelection::Attack9(Address::FlightControls, Address::Engine),
-        // AttackSelection::Attack1(Address::Ailerons),  // This is too obvious
+        // AttackSelection::Attack1(31),  // This is too obvious
         // AttackSelection::Attack3(Address::Ailerons),  // Relies on a "Sensing" RT that doesn't transmit when the line is active
         // AttackSelection::Attack6(Address::Ailerons),  // Relies on a "Sensing" RT that doesn't transmit when the line is active
         // AttackSelection::Attack7(Address::Ailerons),  // Relies on a "Sensing" RT that doesn't transmit when the line is active
