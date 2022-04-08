@@ -2,6 +2,7 @@ use bitfield::bitfield;
 use chrono::Utc;
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
 use spin_sleep;
+use std::collections::VecDeque;
 use std::fmt;
 use std::fs::{create_dir, read_dir, File, OpenOptions};
 use std::io::prelude::*;
@@ -11,12 +12,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 pub const WRD_EMPTY: Word = Word { 0: 0 };
-pub const ATK_DEFAULT_DELAYS: u128 = 4000;
+pub const ATK_DEFAULT_DELAYS: u128 = 4_000;
 pub const CONFIG_PRINT_LOGS: bool = false;
 pub const CONFIG_SAVE_DEVICE_LOGS: bool = false;
 pub const CONFIG_SAVE_SYS_LOGS: bool = true;
 pub const BROADCAST_ADDRESS: u8 = 31;
-pub const RT_WORD_LOAD_TIME: u128 = 0;
+pub const RT_WORD_LOAD_TIME: u128 = 20_000;
 pub const BC_WARMUP_STEPS: u128 = 20;
 
 #[allow(unused)]
@@ -29,7 +30,7 @@ pub enum ErrMsg {
     // show write queue size
     MsgStaChg(usize),
     MsgEntWrdRec,
-    MsgEntErrPty,
+    MsgEntErrPty(i128),
     MsgEntCmd,
     MsgEntCmdRcv,
     MsgEntCmdTrx,
@@ -57,7 +58,7 @@ impl ErrMsg {
             MsgBCReady => "BC is ready".to_owned(),
             MsgStaChg(wq) => format!("Status Changed({})", wq).to_string(),
             MsgEntWrdRec => "Word Received".to_owned(),
-            MsgEntErrPty => "Parity Error".to_owned(),
+            MsgEntErrPty(v) => format!("Parity Error({})", v).to_string(),
             MsgEntCmd => "CMD Received".to_owned(),
             MsgEntCmdRcv => "CMD RCV Received".to_owned(),
             MsgEntCmdTrx => "CMD TRX Received".to_owned(),
@@ -240,8 +241,8 @@ pub trait EventHandler: Send {
     fn on_wrd_rec(&mut self, d: &mut Device, w: &mut Word) {
         self.default_on_wrd_rec(d, w);
     }
-    fn on_err_parity(&mut self, d: &mut Device, w: &mut Word) {
-        self.default_on_err_parity(d, w);
+    fn on_err_parity(&mut self, d: &mut Device, w: &mut Word, lag: i128) {
+        self.default_on_err_parity(d, w, lag);
     }
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         self.default_on_cmd(d, w);
@@ -270,8 +271,11 @@ pub trait EventHandler: Send {
         self.default_on_data_write(d, dword_count);
     }
     fn default_on_bc_timeout(&mut self, d: &mut Device) {
-        let diff = d.clock.elapsed().as_nanos() - d.timeout;
-        d.log(WRD_EMPTY, ErrMsg::MsgBCTimeout(diff));
+        d.log(WRD_EMPTY, ErrMsg::MsgBCTimeout(d.timeout));
+        let mut reset_cmd = Word::new_cmd(BROADCAST_ADDRESS, 0, TR::Receive);
+        reset_cmd.set_mode(1);
+        reset_cmd.set_mode_code(30);
+        d.write(reset_cmd);
     }
     fn default_on_data_write(&mut self, d: &mut Device, dword_count: u8) {
         for i in 0..dword_count {
@@ -285,9 +289,9 @@ pub trait EventHandler: Send {
         // d.log(*w, ErrMsg::MsgEntWrdRec);
     }
     #[allow(unused)]
-    fn default_on_err_parity(&mut self, d: &mut Device, w: &mut Word) {
+    fn default_on_err_parity(&mut self, d: &mut Device, w: &mut Word, lag: i128) {
         // log error tba
-        d.log(*w, ErrMsg::MsgEntErrPty);
+        d.log(*w, ErrMsg::MsgEntErrPty(lag));
     }
     fn default_on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         // cmds are only for RT, matching self's address
@@ -349,7 +353,7 @@ pub trait EventHandler: Send {
         }
     }
     fn default_on_cmd_mcx(&mut self, d: &mut Device, w: &mut Word) {
-        if d.address == w.address() {
+        if d.address == w.address() || w.address() == BROADCAST_ADDRESS {
             d.log(*w, ErrMsg::MsgEntCmdMcx);
             // may be triggered after cmd
             if !d.fake {
@@ -489,7 +493,7 @@ pub struct Device {
     pub logs: Vec<(u128, Mode, u32, u8, State, Word, ErrMsg, u128)>,
     pub transmitters: Vec<Sender<Word>>,
     pub read_queue: Vec<(u128, Word, bool)>,
-    pub write_queue: Vec<(u128, Word)>,
+    pub write_queue: VecDeque<(u128, Word)>,
     pub write_delays: u128,
     pub receiver: Receiver<Word>,
     pub delta_t_avg: u128,
@@ -497,6 +501,7 @@ pub struct Device {
     pub delta_t_count: u128,
     pub timeout: u128,
     pub timeout_times: u128,
+    pub time_write_ready: u128,
 }
 
 impl Device {
@@ -504,14 +509,7 @@ impl Device {
         if self.fake {
             val.set_attk(self.atk_type as u32);
         }
-        if self.write_queue.len() < 1 {
-            self.write_queue
-                .push((self.clock.elapsed().as_nanos() + self.write_delays, val));
-        } else {
-            // println!("here {} {} {:?}, {}", self, self.write_queue.len(), self.write_queue.last().unwrap().0, self.write_delays);
-            self.write_queue
-                .push((self.write_queue.last().unwrap().0 + self.write_delays, val));
-        }
+        self.write_queue.push_back((0, val));
     }
 
     pub fn read(&self) -> Result<Word, TryRecvError> {
@@ -562,8 +560,10 @@ impl Device {
     }
 
     pub fn set_state(&mut self, state: State) {
-        self.state = state;
-        self.log(WRD_EMPTY, ErrMsg::MsgStaChg(self.write_queue.len()));
+        if state != self.state {
+            self.state = state;
+            self.log(WRD_EMPTY, ErrMsg::MsgStaChg(self.write_queue.len()));
+        }
     }
 
     pub fn act_bc2rt(&mut self, dest: u8, data: &Vec<u32>) {
@@ -577,7 +577,7 @@ impl Device {
         // 12_000 is the max allowed RT write delays.
         // put 20_000 to include the queue transmission time.
         self.timeout = self.clock.elapsed().as_nanos()
-            + (RT_WORD_LOAD_TIME + 20_000) * (data.len() as u128 + 2);
+            + (RT_WORD_LOAD_TIME + self.write_delays + 50_000) * (data.len() as u128 + 2);
     }
     pub fn act_rt2bc(&mut self, src: u8, dword_count: u8) {
         self.set_state(State::BusyTrx);
@@ -587,7 +587,7 @@ impl Device {
         self.set_state(State::AwtStsTrxR2B(src));
         self.delta_t_start = self.clock.elapsed().as_nanos();
         self.timeout = self.clock.elapsed().as_nanos()
-            + (RT_WORD_LOAD_TIME + 20_000) * (dword_count as u128 + 2);
+            + (RT_WORD_LOAD_TIME + self.write_delays + 50_000) * (dword_count as u128 + 2);
     }
     pub fn act_rt2rt(&mut self, src: u8, dst: u8, dword_count: u8) {
         self.set_state(State::BusyTrx);
@@ -597,7 +597,7 @@ impl Device {
         self.set_state(State::AwtStsTrxR2R(src, dst));
         self.delta_t_start = self.clock.elapsed().as_nanos();
         self.timeout = self.clock.elapsed().as_nanos()
-            + (RT_WORD_LOAD_TIME + 20_000) * (dword_count as u128 + 4);
+            + (RT_WORD_LOAD_TIME + self.write_delays + 50_000) * (dword_count as u128 + 4);
     }
 }
 
@@ -743,7 +743,7 @@ impl System {
             dword_count_expected: 0,
             clock: self.clock,
             transmitters: transmitters,
-            write_queue: Vec::new(),
+            write_queue: VecDeque::new(),
             read_queue: Vec::new(),
             receiver: receiver,
             delta_t_avg: 0,
@@ -752,6 +752,7 @@ impl System {
             write_delays: w_delay,
             timeout: 0,
             timeout_times: 0,
+            time_write_ready: 0,
         };
         let device_name = format!("{}", device_obj);
         let go = Arc::clone(&self.go);
@@ -776,7 +777,7 @@ impl System {
 
                 loop {
                     if !go.load(Ordering::Relaxed) || device.state == State::Off {
-                        spin_sleeper.sleep_ns(1000_000);
+                        spin_sleeper.sleep_ns(1_000_000);
                     }
                     if device.state != State::Off {
                         let current = device.clock.elapsed().as_nanos();
@@ -808,69 +809,34 @@ impl System {
                         //     println!("here")
                         // }
 
-                        // write is `asynchrnoized`
-                        let wq = device.write_queue.len();
-                        if wq > 0 {
-                            // let mut w_logs = Vec::new();
-                            for entry in device.write_queue.clone().iter() {
-                                // if now it is the time to actually write
-                                if entry.0 <= current {
-                                    // log can be slower than write ...
-                                    device.log(entry.1, ErrMsg::MsgWrt(wq));
-                                    for (i, s) in device.transmitters.iter().enumerate() {
-                                        if (i as u32) != device.id {
-                                            let _e = s.try_send(entry.1);
-                                            // s.send(val);
-                                        }
+                        // write is `asynchrnoized` and sequential
+                        if current > device.time_write_ready {
+                            if let Some(entry) = device.write_queue.pop_front() {
+                                let wq = device.write_queue.len();
+                                spin_sleeper.sleep_ns(device.write_delays as u64);
+                                device.log(entry.1, ErrMsg::MsgWrt(wq));
+                                for (i, s) in device.transmitters.iter().enumerate() {
+                                    if (i as u32) != device.id {
+                                        let _e = s.try_send(entry.1);
                                     }
-                                    // w_logs.push((entry.1, ErrMsg::MsgWrt));
                                 }
+                                device.time_write_ready =
+                                    device.clock.elapsed().as_nanos() + RT_WORD_LOAD_TIME;
                             }
-                            // for wl in w_logs {
-                            //     device.log(wl.0, wl.1);
-                            // }
-                            // clearing all the data (otherwise delta_t keeps increasing)
-                            device.write_queue.retain(|x| (*x).0 > current);
-                            if device.write_queue.len() == 0 {
-                                device.number_of_current_cmd = 0;
-                            }
-                            // device.write_queue.clear();
                         }
 
-                        let res = device.read();
-                        if !res.is_err() {
-                            if prev_word.0 == 0 {
-                                // empty cache, do replacement
-                                prev_word = (current, true, res.unwrap());
-                            } else if current - prev_word.0 < RT_WORD_LOAD_TIME {
-                                // collision
-                                let mut w = res.unwrap();
-                                if w.address() == device.address {
-                                    let mut local_emitter = device_handler_emitter.lock().unwrap();
-                                    let new_atk_type = local_emitter.handler.get_attk_type();
-                                    if new_atk_type != device.atk_type {
-                                        // new handler
-                                        device.reset_all_stateful();
-                                        device.atk_type = new_atk_type;
-                                    }
-                                    if prev_word.1 {
-                                        // if previous word is a valid message then file parity error
-                                        // if not, the error was already filed.
-                                        local_emitter
-                                            .handler
-                                            .on_err_parity(&mut device, &mut prev_word.2);
-                                    }
-                                    local_emitter.handler.on_err_parity(&mut device, &mut w);
-                                }
-                                // replaced with new timestamp, and invalid message flag (collided)
-                                prev_word = (current, false, w);
-                            }
-                        }
-                        if prev_word.1 && current >= prev_word.0 + RT_WORD_LOAD_TIME {
+                        let diff =
+                            (current as i128) - (prev_word.0 as i128) - (RT_WORD_LOAD_TIME as i128);
+                        if prev_word.1 && diff > 0 {
                             // message in the cache is valid & after word_time . processe the word.
                             let mut w = prev_word.2;
                             let mut local_emitter = device_handler_emitter.lock().unwrap();
-                            device.atk_type = local_emitter.handler.get_attk_type();
+                            let new_atk_type = local_emitter.handler.get_attk_type();
+                            if new_atk_type != device.atk_type {
+                                // new handler
+                                device.reset_all_stateful();
+                                device.atk_type = new_atk_type;
+                            }
 
                             if device.mode == Mode::BM {
                                 device.log(w, ErrMsg::MsgBMLog);
@@ -890,6 +856,47 @@ impl System {
 
                             // clear cache
                             prev_word = (0, false, WRD_EMPTY);
+                        }
+                        let res = device.read();
+                        if !res.is_err() {
+                            if prev_word.0 == 0 {
+                                // empty cache, do replacement
+                                prev_word = (current, true, res.unwrap());
+                            } else {
+                                // collision
+                                if diff < 0 {
+                                    let mut w = res.unwrap();
+                                    // if w.address() == device.address {
+                                    let mut local_emitter = device_handler_emitter.lock().unwrap();
+                                    let new_atk_type = local_emitter.handler.get_attk_type();
+                                    if new_atk_type != device.atk_type {
+                                        // new handler
+                                        device.reset_all_stateful();
+                                        device.atk_type = new_atk_type;
+                                    }
+                                    if prev_word.1 {
+                                        // if previous word is a valid message then file parity error
+                                        // if not, the error was already filed.
+                                        // log previous word recieve time
+                                        if device.state != State::Idle {
+                                            local_emitter.handler.on_err_parity(
+                                                &mut device,
+                                                &mut prev_word.2,
+                                                prev_word.0 as i128,
+                                            );
+                                            // log current word recieve time
+                                            local_emitter.handler.on_err_parity(
+                                                &mut device,
+                                                &mut w,
+                                                current as i128,
+                                            );
+                                        }
+                                        device.reset_all_stateful();
+                                    }
+                                    // }
+                                    prev_word = (0, false, WRD_EMPTY);
+                                }
+                            }
                         }
                     }
                     if exit.load(Ordering::Relaxed) {
