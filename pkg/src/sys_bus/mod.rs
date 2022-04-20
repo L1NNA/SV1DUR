@@ -1,6 +1,6 @@
 use bitfield::bitfield;
 use chrono::Utc;
-use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
+use crossbeam_channel::{bounded, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use spin_sleep;
 use std::collections::VecDeque;
 use std::fmt;
@@ -19,6 +19,7 @@ pub const CONFIG_SAVE_SYS_LOGS: bool = true;
 pub const BROADCAST_ADDRESS: u8 = 31;
 pub const RT_WORD_LOAD_TIME: u128 = 20_000;
 pub const BC_WARMUP_STEPS: u128 = 20;
+use num_format::{Locale, ToFormattedString};
 
 #[allow(unused)]
 #[derive(Clone, Debug, PartialEq)]
@@ -30,7 +31,7 @@ pub enum ErrMsg {
     // show write queue size
     MsgStaChg(usize),
     MsgEntWrdRec,
-    MsgEntErrPty(i128),
+    MsgEntErrPty(i128, i128),
     MsgEntCmd,
     MsgEntCmdRcv,
     MsgEntCmdTrx,
@@ -58,7 +59,12 @@ impl ErrMsg {
             MsgBCReady => "BC is ready".to_owned(),
             MsgStaChg(wq) => format!("Status Changed({})", wq).to_string(),
             MsgEntWrdRec => "Word Received".to_owned(),
-            MsgEntErrPty(v) => format!("Parity Error({})", v).to_string(),
+            MsgEntErrPty(recv, lag) => format!(
+                "Parity Error({} {})",
+                recv.to_formatted_string(&Locale::en),
+                lag
+            )
+            .to_string(),
             MsgEntCmd => "CMD Received".to_owned(),
             MsgEntCmdRcv => "CMD RCV Received".to_owned(),
             MsgEntCmdTrx => "CMD TRX Received".to_owned(),
@@ -78,8 +84,8 @@ impl ErrMsg {
 
 pub fn format_log(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> String {
     return format!(
-        "{} {}{:02}-{:02} {:^22} {} {:^22} avg_d_t:{}",
-        l.0,
+        "{:>12} {}{:02}-{:02} {:^22} {} {:^22} avg_d_t:{}",
+        l.0.to_formatted_string(&Locale::en),
         l.1,
         l.2,
         l.3,
@@ -241,8 +247,8 @@ pub trait EventHandler: Send {
     fn on_wrd_rec(&mut self, d: &mut Device, w: &mut Word) {
         self.default_on_wrd_rec(d, w);
     }
-    fn on_err_parity(&mut self, d: &mut Device, w: &mut Word, lag: i128) {
-        self.default_on_err_parity(d, w, lag);
+    fn on_err_parity(&mut self, d: &mut Device, w: &mut Word, recv_time: i128, lag: i128) {
+        self.default_on_err_parity(d, w, recv_time, lag);
     }
     fn on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         self.default_on_cmd(d, w);
@@ -289,9 +295,9 @@ pub trait EventHandler: Send {
         // d.log(*w, ErrMsg::MsgEntWrdRec);
     }
     #[allow(unused)]
-    fn default_on_err_parity(&mut self, d: &mut Device, w: &mut Word, lag: i128) {
+    fn default_on_err_parity(&mut self, d: &mut Device, w: &mut Word, recv_time: i128, lag: i128) {
         // log error tba
-        d.log(*w, ErrMsg::MsgEntErrPty(lag));
+        d.log(*w, ErrMsg::MsgEntErrPty(recv_time, lag));
     }
     fn default_on_cmd(&mut self, d: &mut Device, w: &mut Word) {
         // cmds are only for RT, matching self's address
@@ -512,9 +518,9 @@ impl Device {
         self.write_queue.push_back((0, val));
     }
 
-    pub fn read(&self) -> Result<Word, TryRecvError> {
-        // return self.receiver.recv().unwrap();
-        return self.receiver.try_recv();
+    pub fn read(&self) -> Result<Word, RecvTimeoutError> {
+        return self.receiver.recv_timeout(Duration::from_micros(5));
+        // return self.receiver.try_recv();
     }
 
     pub fn reset_all_stateful(&mut self) -> u8 {
@@ -646,7 +652,7 @@ impl System {
             logs: Vec::new(),
         };
         for _ in 0..sys_bus.max_devices {
-            let (s1, r1) = bounded(512);
+            let (s1, r1) = bounded(0);
             // let (s1, r1) = unbounded();
             sys_bus.transmitters.push(s1);
             sys_bus.receivers.push(r1);
@@ -780,7 +786,7 @@ impl System {
                         spin_sleeper.sleep_ns(1_000_000);
                     }
                     if device.state != State::Off {
-                        let current = device.clock.elapsed().as_nanos();
+                        let mut current = device.clock.elapsed().as_nanos();
                         if device.mode == Mode::BC {
                             let mut timeout = device.timeout;
                             // 10 timeout for warming up
@@ -788,7 +794,7 @@ impl System {
                                 // if it is for warming up, we add additional margin for timeout
                                 // but we can't just skip since certain operation fails forever
                                 // such as BC2RT where RT is a BM
-                                timeout *= 10;
+                                timeout += 20_000_000;
                             }
                             if device.state == State::Idle {
                                 device.log(WRD_EMPTY, ErrMsg::MsgBCReady);
@@ -802,12 +808,9 @@ impl System {
                                 local_emitter.handler.on_bc_timeout(&mut device);
                                 device.reset_all_stateful();
                                 device.timeout = 0;
+                                spin_sleeper.sleep_ns(100_0000);
                             }
-                        } else {
                         }
-                        // if device.mode == Mode::BC{
-                        //     println!("here")
-                        // }
 
                         // write is `asynchrnoized` and sequential
                         if current > device.time_write_ready {
@@ -817,14 +820,22 @@ impl System {
                                 device.log(entry.1, ErrMsg::MsgWrt(wq));
                                 for (i, s) in device.transmitters.iter().enumerate() {
                                     if (i as u32) != device.id {
-                                        let _e = s.try_send(entry.1);
+                                        // let _e = s.try_send(entry.1);
+                                        // let _e = s.send(entry.1);
+                                        let _e =
+                                            s.send_timeout(entry.1, Duration::from_millis(100));
+                                        if _e.is_err() {
+                                            break;
+                                        }
                                     }
                                 }
-                                device.time_write_ready =
-                                    device.clock.elapsed().as_nanos() + RT_WORD_LOAD_TIME;
+                                current = device.clock.elapsed().as_nanos();
+                                device.time_write_ready = current + RT_WORD_LOAD_TIME;
                             }
                         }
-
+                        // update current after potential blocking operation
+                        let res = device.read();
+                        current = device.clock.elapsed().as_nanos();
                         let diff =
                             (current as i128) - (prev_word.0 as i128) - (RT_WORD_LOAD_TIME as i128);
                         if prev_word.1 && diff > 0 {
@@ -857,8 +868,8 @@ impl System {
                             // clear cache
                             prev_word = (0, false, WRD_EMPTY);
                         }
-                        let res = device.read();
                         if !res.is_err() {
+                            // update current after blocking
                             if prev_word.0 == 0 {
                                 // empty cache, do replacement
                                 prev_word = (current, true, res.unwrap());
@@ -878,22 +889,24 @@ impl System {
                                         // if previous word is a valid message then file parity error
                                         // if not, the error was already filed.
                                         // log previous word recieve time
-                                        if device.state != State::Idle {
-                                            local_emitter.handler.on_err_parity(
-                                                &mut device,
-                                                &mut prev_word.2,
-                                                prev_word.0 as i128,
-                                            );
-                                            // log current word recieve time
-                                            local_emitter.handler.on_err_parity(
-                                                &mut device,
-                                                &mut w,
-                                                current as i128,
-                                            );
-                                        }
-                                        device.reset_all_stateful();
+                                        // if device.state != State::Idle {
+                                        local_emitter.handler.on_err_parity(
+                                            &mut device,
+                                            &mut prev_word.2,
+                                            prev_word.0 as i128,
+                                            diff,
+                                        );
+                                        // log current word recieve time
+                                        local_emitter.handler.on_err_parity(
+                                            &mut device,
+                                            &mut w,
+                                            current as i128,
+                                            diff,
+                                        );
+                                        // }
                                     }
                                     // }
+                                    device.reset_all_stateful();
                                     prev_word = (0, false, WRD_EMPTY);
                                 }
                             }
@@ -1086,7 +1099,7 @@ pub fn eval_sys(w_delays: u128, n_devices: u8, proto: Proto, proto_rotate: bool)
         }
     }
     sys_bus.go();
-    sys_bus.sleep_ms(100);
+    sys_bus.sleep_ms(200);
     sys_bus.stop();
     sys_bus.join();
     return sys_bus;
