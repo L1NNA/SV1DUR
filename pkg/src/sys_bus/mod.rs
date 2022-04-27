@@ -19,6 +19,7 @@ pub const CONFIG_SAVE_SYS_LOGS: bool = true;
 pub const BROADCAST_ADDRESS: u8 = 31;
 pub const RT_WORD_LOAD_TIME: u128 = 20_000;
 pub const BC_WARMUP_STEPS: u128 = 20;
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use num_format::{Locale, ToFormattedString};
 
 #[allow(unused)]
@@ -97,7 +98,8 @@ pub fn format_log(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> Strin
 }
 
 pub fn format_log_bm(l: &(u128, Mode, u32, u8, State, Word, ErrMsg, u128)) -> String {
-    return format!("{} {:?}", l.0, l.5,);
+    // return format!("{} {:?}", l.0, l.5,);
+    return format!("{},{},{}, {}", l.0, l.5.all(), l.5.parity_bit(), l.5.attk());
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -630,8 +632,11 @@ pub struct System {
 
 impl System {
     pub fn new(max_devices: u32, write_delays: u128) -> Self {
-        let clock = Instant::now();
         let home_dir = Utc::now().format("%F-%H-%M-%S-%f").to_string();
+        return System::new_with_name(max_devices, write_delays, home_dir);
+    }
+    pub fn new_with_name(max_devices: u32, write_delays: u128, home_dir: String) -> Self {
+        let clock = Instant::now();
 
         if CONFIG_SAVE_DEVICE_LOGS || CONFIG_SAVE_SYS_LOGS {
             let _ = create_dir(PathBuf::from(&home_dir));
@@ -719,6 +724,26 @@ impl System {
     }
     pub fn sleep_ms(&mut self, ms: u64) {
         thread::sleep(Duration::from_millis(ms));
+    }
+    pub fn sleep_ms_progress(&mut self, mut ms: u64) {
+        let mut next: u64 = 5;
+        let sty = ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+            .progress_chars("##-");
+
+        let pbs = ProgressBar::new(ms);
+        pbs.set_style(sty.clone());
+        pbs.set_draw_target(ProgressDrawTarget::stdout());
+
+        while ms != 0 {
+            if next > ms {
+                next = ms
+            }
+            thread::sleep(Duration::from_millis(next));
+            ms = ms - next;
+            // pbs.set_message(format!("{}", ms));
+            pbs.inc(next);
+        }
     }
     pub fn run_d(
         &mut self,
@@ -903,6 +928,11 @@ impl System {
                                             current as i128,
                                             diff,
                                         );
+                                        // log the previous word (corrupted)
+                                        if device.mode == Mode::BM {
+                                            w.set_parity_bit(1);
+                                            device.log(w, ErrMsg::MsgBMLog);
+                                        }
                                         // }
                                     }
                                     // }

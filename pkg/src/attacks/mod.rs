@@ -107,7 +107,7 @@ impl AttackController {
             AttackType::AtkCommandInvalidationAttack => Box::new(CommandInvalidationAttack {
                 attack_times: Vec::new(),
                 success: false,
-                target: 2, // attacking RT address @4
+                target: target, // attacking RT address @4
                 target_found: false,
             }),
         };

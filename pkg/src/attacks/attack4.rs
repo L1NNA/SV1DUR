@@ -82,6 +82,7 @@ impl EventHandler for MITMAttackOnRTs {
             if self.target_dst_found && self.target_src_found {
                 //sleep(self.delay);
                 self.start_mitm(d);
+                // repeat
             }
         } else if self.target_src == w.address() && self.done {
             d.log(
@@ -94,7 +95,9 @@ impl EventHandler for MITMAttackOnRTs {
             self.target_src_found = false;
             self.target_dst_found = false;
             // no repeat
-            // self.done = false;
+
+            // added back for repeat
+            self.done = false;
         }
     }
 }

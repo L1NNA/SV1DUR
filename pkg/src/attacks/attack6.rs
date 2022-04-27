@@ -83,6 +83,8 @@ impl EventHandler for FakeStatusReccmd {
             self.word_count -= 1;
             if self.word_count == 0 {
                 self.fake_status(d);
+                // for repeat
+                self.target_found = false;
             }
         }
     }

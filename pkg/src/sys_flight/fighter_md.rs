@@ -4,7 +4,9 @@ use crate::sys_bus::{
     System, Word, TR, WRD_EMPTY,
 };
 use bitfield::bitfield;
+use num_format::{Locale, ToFormattedString};
 use priority_queue::DoublePriorityQueue;
+use rand::Rng;
 use rusqlite::{Connection, Result};
 use std::collections::LinkedList;
 use std::sync::{Arc, Mutex};
@@ -575,6 +577,7 @@ pub struct FighterDeviceEventHandler {
     latest_timestamp: u128,
     destination: Option<Address>,
     pub total_recv_count: u32,
+    pub max_timestamp: u32,
 }
 
 impl FighterDeviceEventHandler {
@@ -609,6 +612,7 @@ impl FighterDeviceEventHandler {
             }
         }
         let handler = FighterDeviceEventHandler {
+            max_timestamp: (&data_vec).back().unwrap().0,
             address: component,
             data: data_vec,
             time_offset: 0,
@@ -676,7 +680,13 @@ impl EventHandler for FighterDeviceEventHandler {
     }
 }
 
-pub fn eval_fighter_sim(database: &str, w_delays: u128, run_time: u64, attack: AttackType) {
+pub fn eval_fighter_sim(
+    database: &str,
+    w_delays: u128,
+    mut run_time: u64,
+    attack: AttackType,
+    name: String,
+) {
     // let database = "sample_data.sqlite";
     let devices = vec![
         Address::BusControl,
@@ -695,7 +705,8 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, run_time: u64, attack: A
         Address::AttackController,
     ];
     let total_devices = devices.len() as u32;
-    let mut sys = System::new(total_devices, w_delays);
+    let mut sys = System::new_with_name(total_devices, w_delays, name);
+    let mut max_device_replay_time = 0;
 
     let mut attack_controller = AttackController {
         current_attack: AttackType::Benign,
@@ -717,20 +728,24 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, run_time: u64, attack: A
                 let fields = match d {
                     Address::BusControl => "",
                     Address::FlightControls => ", yoke_x_position, yoke_y_position, yoke_x_indicator, yoke_y_indicator, rudder_pedal_position, rudder_pedal_indicator, brakes_right_position, brakes_left_position, throttle_level_position1, spoiler_handle_position, flaps_handle_percent",
-                    Address::Flaps => "",
+                    Address::Flaps => ", flaps_handle_percent",
                     Address::Engine => "",
                     Address::Rudder => ", rudder_position",
                     Address::Ailerons => "",
                     Address::Elevators => "",
-                    Address::Spoilers => "",
+                    Address::Spoilers => ", spoiler_handle_position, spoiler_right_position, spoiler_left_position",
                     Address::Fuel => ", fuel_total_quantity, estimated_fuel_flow",
                     Address::Positioning => ", gps_latitude, gps_longitude, gps_altitude",
                     Address::Gyro => ", plane_pitch, plane_bank, incidence_alpha, incidence_beta, plane_heading_gyro",
                     Address::Brakes => "",
                     _ => "",
                 };
+                let handler = FighterDeviceEventHandler::new(database, d, fields);
+                if handler.max_timestamp > max_device_replay_time {
+                    max_device_replay_time = handler.max_timestamp;
+                }
                 Arc::new(Mutex::new(EventHandlerEmitter {
-                    handler: Box::new(FighterDeviceEventHandler::new(database, d, fields)),
+                    handler: Box::new(handler),
                 }))
             }
         };
@@ -742,17 +757,25 @@ pub fn eval_fighter_sim(database: &str, w_delays: u128, run_time: u64, attack: A
         sys.run_d(d as u8, mode, emitter, d == Address::AttackController);
     }
 
-    let attack_time = run_time / 2;
+    if run_time < 1 {
+        run_time = max_device_replay_time.into();
+    }
+    let attack_time = rand::thread_rng().gen_range(0..run_time/2);
     let keep_time = run_time - attack_time;
+    println!(
+        "Total runtime {}. Attack will be at {}.",
+        run_time.to_formatted_string(&Locale::en),
+        attack_time.to_formatted_string(&Locale::en)
+    );
     sys.go();
-    sys.sleep_ms(attack_time);
+    sys.sleep_ms_progress(attack_time);
     // we can add as many as attacks but some may not appear (due to the previous attacks).
     attack_controller.sabotage(
         attack,
-        Address::FlightControls as u8,
+        Address::Engine as u8,
         Address::FlightControls as u8,
     );
-    sys.sleep_ms(keep_time);
+    sys.sleep_ms_progress(keep_time);
     sys.stop();
     sys.join();
 }

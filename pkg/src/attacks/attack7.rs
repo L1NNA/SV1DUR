@@ -23,7 +23,8 @@ impl FakeStatusTrcmd {
             ErrMsg::MsgAttk(format!("Fake status injected!").to_string()),
         );
         // attack only once
-        // self.target_found = false;
+        // comment out line below for repeat
+        self.target_found = false;
         self.success = true;
     }
 }

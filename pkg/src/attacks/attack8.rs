@@ -29,7 +29,9 @@ impl DesynchronizationAttackOnRT {
         d.write(w);
         let w = Word::new_data(0x000F);
         d.write(w);
-        self.target_found = true;
+        // self.target_found = true;
+        // for repeat:
+        self.target_found = false;
         self.success = true;
     }
 }

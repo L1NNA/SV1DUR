@@ -40,7 +40,8 @@ impl EventHandler for ShutdownAttackRT {
                 WRD_EMPTY,
                 ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", self.target).to_string()),
             );
-            self.target_found = true;
+            // commented out for repeat
+            // self.target_found = true;
             self.kill_rt(d);
         }
         self.default_on_cmd(d, w);
@@ -52,7 +53,8 @@ impl EventHandler for ShutdownAttackRT {
                 WRD_EMPTY,
                 ErrMsg::MsgAttk(format!("Attacker>> Killing RT{}", self.target).to_string()),
             );
-            self.target_found = true;
+            // commented out for repeat
+            // self.target_found = true;
             self.kill_rt(d);
         }
         self.default_on_sts(d, w);

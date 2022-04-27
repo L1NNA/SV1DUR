@@ -67,6 +67,8 @@ impl EventHandler for DataCorruptionAttack {
             );
             self.target_found = true;
             self.inject(d);
+            // for repeat
+            self.target_found = false;
         }
         self.default_on_cmd(d, w);
     }

@@ -35,6 +35,7 @@ impl EventHandler for CommandInvalidationAttack {
         // This function replaces "find_RT_tcmd" from Michael's code
         // We cannot use on_cmd_trx here because that only fires after on_cmd verifies that the address is correct.
         let destination = w.address();
+        // println!("here! {}/{}", destination, self.target);
         if destination == self.target && self.target_found == false && w.tr() == TR::Transmit {
             d.log(
                 *w,
@@ -44,6 +45,8 @@ impl EventHandler for CommandInvalidationAttack {
             );
             self.target_found = true;
             self.inject(d);
+            // for repeat
+            self.target_found = false;
         }
         self.default_on_cmd(d, w);
     }

@@ -55,6 +55,8 @@ impl EventHandler for DataThrashingAgainstRT {
                     ErrMsg::MsgAttk(format!(">>> Fake command injected!").to_string()),
                 );
                 self.inject_words(d);
+                // repeaet attack
+                self.target_found = false;
             }
         }
         self.default_on_dat(d, w);
