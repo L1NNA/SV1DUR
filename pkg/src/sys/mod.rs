@@ -210,7 +210,7 @@ impl System {
                             let mut timeout = device.timeout;
                             let current = device.clock.elapsed().as_nanos();
                             if bc_step <= BC_WARMUP_STEPS {
-                                timeout *= 10;
+                                timeout *= 2;
                             }
                             if device.state == State::Idle {
                                 device.log(WRD_EMPTY, ErrMsg::MsgBCReady);

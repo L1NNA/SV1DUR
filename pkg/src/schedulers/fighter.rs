@@ -11,7 +11,9 @@ use bitfield::bitfield;
 use std::collections::LinkedList;
 use rusqlite::{Connection, Result, Error};
 use std::sync::{Arc, Mutex};
-use rand::{distributions::{Distribution, Standard}, Rng};
+use rand::{distributions::{Distribution, Standard}, Rng, seq::SliceRandom};
+use std::path::PathBuf;
+use std::fs::{create_dir, read_dir, File, OpenOptions};
 
 #[derive(Hash, PartialEq, Eq, Copy, Clone)]
 pub struct Event {
@@ -582,20 +584,49 @@ pub fn eval_fighter_sim(database: &str, mut run_time: u64) {
     let keep_time = run_time - attack_time;
     let mut attacks = vec![
         AttackSelection::NoAttack,
+        AttackSelection::Attack2(Address::Engine),
+        AttackSelection::Attack2(Address::Rudder),
+        AttackSelection::Attack2(Address::Flaps),
         AttackSelection::Attack2(Address::Ailerons),
+        AttackSelection::Attack2(Address::Fuel),
+        AttackSelection::Attack2(Address::Positioning),
+        AttackSelection::Attack2(Address::FlightControls),
+        AttackSelection::Attack4(Address::FlightControls, Address::Engine),
         AttackSelection::Attack4(Address::FlightControls, Address::Rudder),
+        AttackSelection::Attack4(Address::FlightControls, Address::Flaps),
+        AttackSelection::Attack4(Address::FlightControls, Address::Ailerons),
+        AttackSelection::Attack4(Address::Rudder, Address::FlightControls),
+        AttackSelection::Attack4(Address::Fuel, Address::FlightControls),
+        AttackSelection::Attack4(Address::Positioning, Address::FlightControls),
+        AttackSelection::Attack5(Address::Engine),
+        AttackSelection::Attack5(Address::Ailerons),
+        AttackSelection::Attack5(Address::Positioning),
         AttackSelection::Attack5(Address::Fuel),
+        AttackSelection::Attack5(Address::Rudder),
+        AttackSelection::Attack5(Address::Flaps),
+        AttackSelection::Attack5(Address::Positioning),
+        AttackSelection::Attack5(Address::FlightControls),
         AttackSelection::Attack9(Address::FlightControls, Address::Engine),
-        // AttackSelection::Attack1(31),  // This is too obvious
-        // AttackSelection::Attack3(Address::Ailerons),  // Relies on a "Sensing" RT that doesn't transmit when the line is active
-        // AttackSelection::Attack6(Address::Ailerons),  // Relies on a "Sensing" RT that doesn't transmit when the line is active
-        // AttackSelection::Attack7(Address::Ailerons),  // Relies on a "Sensing" RT that doesn't transmit when the line is active
-        // AttackSelection::Attack8(Address::Ailerons),  // Relies on a "Sensing" and a "dumb" RT
-        // AttackSelection::Attack10(Address::Ailerons), // Relies on a "dumb" RT that doesn't check the sync bits
+        AttackSelection::Attack9(Address::FlightControls, Address::Rudder),
+        AttackSelection::Attack9(Address::FlightControls, Address::Flaps),
+        AttackSelection::Attack9(Address::FlightControls, Address::Ailerons),
+        AttackSelection::Attack9(Address::Rudder, Address::FlightControls),
+        AttackSelection::Attack9(Address::Fuel, Address::FlightControls),
+        AttackSelection::Attack9(Address::Positioning, Address::FlightControls),
+        
+        
+        AttackSelection::Attack1(31),  // This is too obvious
+        AttackSelection::Attack3(Address::Ailerons),  // Relies on a "Sensing" RT that doesn't transmit when the line is active
+        AttackSelection::Attack6(Address::Ailerons),  // Relies on a "Sensing" RT that doesn't transmit when the line is active
+        AttackSelection::Attack7(Address::Ailerons),  // Relies on a "Sensing" RT that doesn't transmit when the line is active
+        AttackSelection::Attack8(Address::Ailerons),  // Relies on a "Sensing" and a "dumb" RT
+        AttackSelection::Attack10(Address::Ailerons), // Relies on a "dumb" RT that doesn't check the sync bits
     ];
+    let mut dataset_sections: Vec<(u128, AttackSelection)> = Vec::new();
+    let mut rng = rand::thread_rng();
+    attacks.shuffle(&mut rng);
     sys.go();
     let start_time = sys.clock.elapsed().as_millis();
-    let mut rng = rand::thread_rng();
     while(sys.clock.elapsed().as_millis() < run_time as u128) {
     //     let rand_num = rng.gen::<f32>();
     //     if rand_num < 0.03 {
@@ -624,6 +655,7 @@ pub fn eval_fighter_sim(database: &str, mut run_time: u64) {
                 if rand_num < 0.3 {
                     rapid_fire = true;
                 }
+                dataset_sections.push((sys.clock.elapsed().as_millis(), attack.clone()));
                 attack_controller.attack(attack, rapid_fire);
             },
             _ => {}
@@ -642,4 +674,16 @@ pub fn eval_fighter_sim(database: &str, mut run_time: u64) {
     // sys.sleep_ms(keep_time);
     sys.stop();
     sys.join();
+
+    let attack_schedule_file = PathBuf::from(sys.home_dir.clone()).join("attack_sections.log");
+    let mut file = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .create(true)
+        .open(attack_schedule_file)
+        .unwrap();
+    writeln!(file, "Start_time, AttackSelection");
+    for l in &dataset_sections {
+        writeln!(file, "{:?}", l);
+    }
 }
